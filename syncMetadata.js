@@ -45,11 +45,17 @@ async function syncCountries() {
 
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(',');
-        if (parts.length >= 2) {
+        if (parts.length >= 3) {
             const countryId = parseInt(parts[0].trim());
-            const countryName = parts.slice(1).join(',').replace(/"/g, '').trim();
+            const countryName = parts[1].replace(/"/g, '').trim();
+            const countryFullName = parts.slice(2).join(',').replace(/"/g, '').trim();
+
             countryNamesMap.set(countryId, countryName);
-            rows.push({ country_id: countryId, country_name: countryName });
+            rows.push({
+                country_id: countryId,
+                country_name: countryName,
+                country_full_name: countryFullName
+            });
         }
     }
 
