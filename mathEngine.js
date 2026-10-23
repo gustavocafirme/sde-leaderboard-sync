@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
-const { trackingDir, totalTracks, scorePowerFactor, scoreWDecayFactor, ssrWFinalPowerPass, countryContributionFactor } = require('./config');
+const { trackingDir, totalTracks } = require('./config');
 const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla } = require('./syncMetadata');
+const { processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
 
 function calculateTickTime(timeInSeconds) {
     if (Number(timeInSeconds.toFixed(2)) === timeInSeconds) {
@@ -19,12 +20,9 @@ async function processAndSyncLeaderboardsAndRatings() {
         return;
     }
 
-    // Mapeamento de ID canônico (sigla canônica -> countryId oficial da base)
     const canonicalSiglaToIdMap = {};
-    // Mapeamento de countryId bruto do CSV -> countryId canônico oficial
     const rawCountryIdToCanonicalId = {};
 
-    // Pré-carrega o mapeamento de IDs baseado nos países sincronizados
     const { data: countriesData, error: countriesError } = await supabase.from('countries').select('country_id, country_name');
     if (!countriesError && countriesData) {
         for (const c of countriesData) {
@@ -47,8 +45,8 @@ async function processAndSyncLeaderboardsAndRatings() {
     const playerScoresPerTrack = {};
     const allUniqueSteamIds = new Set();
     const allUniqueCountryIds = new Set();
-    const countryScoresPerTrack = {}; // countryId -> { trackIndex -> cScore }
-    const playerCountryFrequencies = {}; // steamId -> { countryId -> count }
+    const countryScoresPerTrack = {};
+    const playerCountryFrequencies = {};
 
     // Passo A: Processa cada pista individualmente usando trackIndex (1 a 75)
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
@@ -64,14 +62,13 @@ async function processAndSyncLeaderboardsAndRatings() {
                 const originalPosition = parseInt(parts[0].trim());
                 const steamId = parts[1].trim();
                 const rawCountryId = parseInt(parts[2].trim());
-                const countryId = resolveCanonicalCountryId(rawCountryId); // Converte para o ID canônico unificado!
+                const countryId = resolveCanonicalCountryId(rawCountryId);
                 const carId = parseInt(parts[3].trim());
                 const timeMs = parseInt(parts[4].trim());
 
                 allUniqueSteamIds.add(steamId);
                 allUniqueCountryIds.add(countryId);
 
-                // Acumula frequência do país canônico para o jogador
                 if (!playerCountryFrequencies[steamId]) {
                     playerCountryFrequencies[steamId] = {};
                 }
@@ -97,79 +94,12 @@ async function processAndSyncLeaderboardsAndRatings() {
 
         if (trackEntries.length === 0) continue;
 
-        trackEntries.sort((a, b) => a.effectiveTime - b.effectiveTime);
+        // Delega o cálculo matemático da pista para o motor da família SSR
+        const processed = processTrackRatings(trackEntries, calculateTickTime);
+        allTracksData[trackIndex] = processed.trackEntries;
+        countryScoresPerTrack[trackIndex] = processed.countryScores;
 
-        const worldRecordEffectiveTime = trackEntries[0].effectiveTime;
-        const baseTimePosition = Math.round(trackEntries.length * 0.75);
-        const baseTimeEffectiveTime = trackEntries[baseTimePosition - 1].effectiveTime;
-
-        for (let index = 0; index < trackEntries.length; index++) {
-            const entry = trackEntries[index];
-            const calculatedPosition = index + 1;
-            let score = 0;
-
-            if (calculatedPosition === 1) {
-                score = 1.0;
-            } else if (calculatedPosition >= baseTimePosition) {
-                score = 0.0;
-            } else {
-                const numerator = entry.effectiveTime - worldRecordEffectiveTime;
-                const denominator = baseTimeEffectiveTime - worldRecordEffectiveTime;
-                score = Math.pow(1 - (numerator / denominator), scorePowerFactor);
-            }
-
-            entry.calculatedPosition = calculatedPosition;
-            entry.score = Math.max(0, Math.min(1, score));
-        }
-
-        for (let index = 0; index < trackEntries.length; index++) {
-            const entry = trackEntries[index];
-            if (entry.calculatedPosition === 1) {
-                entry.to2nd = entry.score - trackEntries[1].score;
-            } else {
-                entry.to2nd = 0.0;
-            }
-        }
-
-        // Cálculo do C-Score e contribuição individual por país unificado nesta pista
-        const entriesByCountry = {};
-        for (const entry of trackEntries) {
-            if (!entriesByCountry[entry.countryId]) {
-                entriesByCountry[entry.countryId] = [];
-            }
-            entriesByCountry[entry.countryId].push(entry);
-        }
-
-        if (!countryScoresPerTrack[trackIndex]) {
-            countryScoresPerTrack[trackIndex] = {};
-        }
-
-        for (const countryIdStr in entriesByCountry) {
-            const countryId = parseInt(countryIdStr);
-            const countryEntries = entriesByCountry[countryId];
-
-            countryEntries.sort((a, b) => b.score - a.score);
-
-            let totalCountryCScore = 0;
-            let remainingWeight = 1.0;
-
-            for (let k = 0; k < countryEntries.length; k++) {
-                const entry = countryEntries[k];
-                const contributionWeight = remainingWeight * countryContributionFactor;
-                
-                const playerContribution = entry.score * contributionWeight;
-                entry.cScore = playerContribution;
-
-                totalCountryCScore += playerContribution;
-                remainingWeight -= contributionWeight;
-            }
-
-            countryScoresPerTrack[trackIndex][countryId] = totalCountryCScore;
-        }
-
-        allTracksData[trackIndex] = trackEntries;
-
-        for (const entry of trackEntries) {
+        for (const entry of processed.trackEntries) {
             if (!playerScoresPerTrack[entry.steamId]) {
                 playerScoresPerTrack[entry.steamId] = {};
             }
@@ -195,71 +125,11 @@ async function processAndSyncLeaderboardsAndRatings() {
         }
     }
 
-    // Passo B: Calcula Score-W, SSR e SSR-W globais para cada jogador
-    const playerRatings = {};
-    let normalizationConstant = 0;
-    for (let n = 1; n <= totalTracks; n++) {
-        normalizationConstant += Math.pow(scoreWDecayFactor, n - 1);
-    }
+    // Passo B: Calcula Score-W, SSR e SSR-W globais para cada jogador via engine
+    const playerRatings = computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack);
 
-    for (const steamId of allUniqueSteamIds) {
-        const playerTracks = playerScoresPerTrack[steamId] || {};
-        const allScores = [];
-
-        for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
-            const entry = playerTracks[trackIndex];
-            const scoreValue = entry ? entry.score : 0.0;
-            allScores.push({ trackIndex, score: scoreValue, entry });
-        }
-
-        allScores.sort((a, b) => {
-            if (b.score !== a.score) {
-                return b.score - a.score;
-            }
-            const to2ndA = a.entry ? a.entry.to2nd : 0.0;
-            const to2ndB = b.entry ? b.entry.to2nd : 0.0;
-            return to2ndB - to2ndA;
-        });
-
-        let sumOfScores = 0;
-        let sumOfScoreWeighted = 0;
-        const weightedScoresPerTrack = {};
-
-        for (let index = 0; index < allScores.length; index++) {
-            const scoreObj = allScores[index];
-            const scorePosition = index + 1;
-            const weightedScore = scoreObj.score * Math.pow(scoreWDecayFactor, scorePosition - 1);
-
-            sumOfScores += scoreObj.score;
-            sumOfScoreWeighted += weightedScore;
-
-            if (scoreObj.entry) {
-                weightedScoresPerTrack[scoreObj.trackIndex] = weightedScore;
-            }
-        }
-
-        const ssr = sumOfScores / totalTracks;
-        const ssrW = Math.pow((sumOfScoreWeighted / normalizationConstant), ssrWFinalPowerPass);
-
-        playerRatings[steamId] = {
-            ssr: isNaN(ssr) ? 0 : ssr,
-            ssrW: isNaN(ssrW) ? 0 : ssrW,
-            weightedScoresPerTrack
-        };
-    }
-
-    // Passo C: Calcula o C-SSR global para cada país
-    const countryRatings = {};
-    for (const countryId of allUniqueCountryIds) {
-        let sumOfCScores = 0;
-        for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
-            sumOfCScores += (countryScoresPerTrack[trackIndex] && countryScoresPerTrack[trackIndex][countryId]) || 0.0;
-        }
-        const cssr = sumOfCScores / totalTracks;
-        countryRatings[countryId] = {
-            cssr: isNaN(cssr) ? 0 : cssr
-        };
-    }
+    // Passo C: Calcula o C-SSR global para cada país via engine
+    const countryRatings = computeCountryRatings(allUniqueCountryIds, countryScoresPerTrack);
 
     // Passo D: Sincroniza os dados detalhados das pistas
     console.log("[Leaderboards] Enviando dados calculados das pistas para o Supabase...");
