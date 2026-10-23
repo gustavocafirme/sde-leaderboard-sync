@@ -4,6 +4,7 @@ const supabase = require('./supabaseClient');
 const { trackingDir, totalTracks } = require('./config');
 const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla } = require('./syncMetadata');
 const { processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
+const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine'); // <-- Importa o novo engine FI
 
 function calculateTickTime(timeInSeconds) {
     if (Number(timeInSeconds.toFixed(2)) === timeInSeconds) {
@@ -43,6 +44,7 @@ async function processAndSyncLeaderboardsAndRatings() {
 
     const allTracksData = {};
     const playerScoresPerTrack = {};
+    const playerFiScoresPerTrack = {}; // Rastreia scores FI por pista e jogador
     const allUniqueSteamIds = new Set();
     const allUniqueCountryIds = new Set();
     const countryScoresPerTrack = {};
@@ -94,20 +96,29 @@ async function processAndSyncLeaderboardsAndRatings() {
 
         if (trackEntries.length === 0) continue;
 
-        // Delega o cálculo matemático da pista para o motor da família SSR
-        const processed = processTrackRatings(trackEntries, calculateTickTime);
-        allTracksData[trackIndex] = processed.trackEntries;
-        countryScoresPerTrack[trackIndex] = processed.countryScores;
+        // 1. Processa a família SSR tradicional
+        const processedSSR = processTrackRatings(trackEntries, calculateTickTime);
+        
+        // 2. Processa a métrica SSR-FI (independente de effective time)
+        const processedFI = processTrackFiRatings(processedSSR.trackEntries);
 
-        for (const entry of processed.trackEntries) {
+        allTracksData[trackIndex] = processedFI;
+        countryScoresPerTrack[trackIndex] = processedSSR.countryScores;
+
+        for (const entry of processedFI) {
             if (!playerScoresPerTrack[entry.steamId]) {
                 playerScoresPerTrack[entry.steamId] = {};
             }
             playerScoresPerTrack[entry.steamId][trackIndex] = entry;
+
+            if (!playerFiScoresPerTrack[entry.steamId]) {
+                playerFiScoresPerTrack[entry.steamId] = {};
+            }
+            playerFiScoresPerTrack[entry.steamId][trackIndex] = entry;
         }
     }
 
-    // Processamento do país oficial de cada jogador aplicando as regras do "aa"
+    // Processamento do país oficial de cada jogador
     const playerBestCountry = {};
     for (const steamId of allUniqueSteamIds) {
         const counts = playerCountryFrequencies[steamId] || {};
@@ -115,7 +126,6 @@ async function processAndSyncLeaderboardsAndRatings() {
 
         if (sortedCountryIds.length > 0) {
             let bestCountryId = sortedCountryIds[0];
-
             if (getCountrySigla(bestCountryId) === 'aa' && sortedCountryIds.length > 1) {
                 bestCountryId = sortedCountryIds[1];
             }
@@ -125,13 +135,16 @@ async function processAndSyncLeaderboardsAndRatings() {
         }
     }
 
-    // Passo B: Calcula Score-W, SSR e SSR-W globais para cada jogador via engine
+    // Calcula SSR e SSR-W tradicionais
     const playerRatings = computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack);
 
-    // Passo C: Calcula o C-SSR global para cada país via engine
+    // Calcula SSR-FI global
+    const playerFiRatings = computePlayerFiRatings(allUniqueSteamIds, playerFiScoresPerTrack);
+
+    // Calcula C-SSR global para os países
     const countryRatings = computeCountryRatings(allUniqueCountryIds, countryScoresPerTrack);
 
-    // Passo D: Sincroniza os dados detalhados das pistas
+    // Passo D: Sincroniza os dados detalhados das pistas (incluindo score_fi)
     console.log("[Leaderboards] Enviando dados calculados das pistas para o Supabase...");
 
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
@@ -154,7 +167,8 @@ async function processAndSyncLeaderboardsAndRatings() {
                 score: entry.score,
                 score_w: scoreW,
                 to2nd: entry.to2nd,
-                c_score: entry.cScore || 0.0
+                c_score: entry.cScore || 0.0,
+                score_fi: entry.scoreFi || 0.0
             };
         });
 
@@ -172,20 +186,23 @@ async function processAndSyncLeaderboardsAndRatings() {
         console.log(`[Leaderboards] Pista #${trackIndex} sincronizada (${rowsToUpsert.length} registros).`);
     }
 
-    // Passo E: Atualiza jogadores
-    console.log("[Players] Atualizando pontuações e país oficial na tabela de jogadores...");
+    // Passo E: Atualiza jogadores (incluindo o ssr_fi)
+    console.log("[Players] Atualizando pontuações, país oficial e SSR-FI na tabela de jogadores...");
     const playerRowsToUpsert = [];
 
     for (const steamId of allUniqueSteamIds) {
         const rating = playerRatings[steamId];
+        const fiRating = playerFiRatings[steamId];
         const playerName = getPlayerName(steamId);
         const bestCountryId = playerBestCountry[steamId];
+
         if (rating) {
             playerRowsToUpsert.push({
                 steam_id: steamId,
                 player_name: playerName,
                 ssr: rating.ssr,
                 ssr_w: rating.ssrW,
+                ssr_fi: fiRating ? fiRating.ssrFi : 0.0,
                 country_id: bestCountryId
             });
         }
