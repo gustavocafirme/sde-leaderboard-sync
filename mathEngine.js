@@ -2,9 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir, totalTracks } = require('./config');
-const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla } = require('./syncMetadata');
+const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId } = require('./syncMetadata');
 const { processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
-const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine'); // <-- Importa o novo engine FI
+const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
 
 function calculateTickTime(timeInSeconds) {
     if (Number(timeInSeconds.toFixed(2)) === timeInSeconds) {
@@ -42,15 +42,12 @@ async function processAndSyncLeaderboardsAndRatings() {
         return officialId;
     }
 
-    const allTracksData = {};
-    const playerScoresPerTrack = {};
-    const playerFiScoresPerTrack = {}; // Rastreia scores FI por pista e jogador
+    const rawTracksEntries = {};
     const allUniqueSteamIds = new Set();
     const allUniqueCountryIds = new Set();
-    const countryScoresPerTrack = {};
     const playerCountryFrequencies = {};
 
-    // Passo A: Processa cada pista individualmente usando trackIndex (1 a 75)
+    // 1ª ETAPA: Carrega todas as pistas e acumula as frequências de países por jogador
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
         const filePath = path.join(leaderboardsDir, `leaderboard_track_${trackIndex}.csv`);
         if (!fs.existsSync(filePath)) continue;
@@ -94,12 +91,55 @@ async function processAndSyncLeaderboardsAndRatings() {
             }
         }
 
-        if (trackEntries.length === 0) continue;
+        if (trackEntries.length > 0) {
+            rawTracksEntries[trackIndex] = trackEntries;
+        }
+    }
 
-        // 1. Processa a família SSR tradicional
-        const processedSSR = processTrackRatings(trackEntries, calculateTickTime);
-        
-        // 2. Processa a métrica SSR-FI (independente de effective time)
+    // Determina o país oficial (best country) de cada jogador ANTES do cálculo do C-Score
+    const playerBestCountry = {};
+    for (const steamId of allUniqueSteamIds) {
+        const counts = playerCountryFrequencies[steamId] || {};
+        const sortedCountryIds = Object.keys(counts).map(Number).sort((a, b) => counts[b] - counts[a]);
+
+        let bestCountryId = null;
+
+        if (sortedCountryIds.length > 0) {
+            bestCountryId = sortedCountryIds[0];
+            const primarySigla = getCountrySigla(bestCountryId);
+
+            if (primarySigla === 'aa' && sortedCountryIds.length > 1) {
+                bestCountryId = sortedCountryIds[1];
+            }
+
+            if (getCountrySigla(bestCountryId) === 'aa') {
+                const manualId = getManualCountryId(steamId);
+                if (manualId !== null) {
+                    bestCountryId = manualId;
+                }
+            }
+        } else {
+            bestCountryId = getManualCountryId(steamId);
+        }
+
+        playerBestCountry[steamId] = bestCountryId;
+        if (bestCountryId !== null) {
+            allUniqueCountryIds.add(bestCountryId);
+        }
+    }
+
+    const allTracksData = {};
+    const playerScoresPerTrack = {};
+    const playerFiScoresPerTrack = {};
+    const countryScoresPerTrack = {};
+
+    // 2ª ETAPA: Processa as pontuações e o C-Score das pistas utilizando o país oficial do jogador (`playerBestCountry`)
+    for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
+        const trackEntries = rawTracksEntries[trackIndex];
+        if (!trackEntries || trackEntries.length === 0) continue;
+
+        // Processa SSR passando o mapa do país oficial do jogador
+        const processedSSR = processTrackRatings(trackEntries, calculateTickTime, playerBestCountry);
         const processedFI = processTrackFiRatings(processedSSR.trackEntries);
 
         allTracksData[trackIndex] = processedFI;
@@ -118,33 +158,12 @@ async function processAndSyncLeaderboardsAndRatings() {
         }
     }
 
-    // Processamento do país oficial de cada jogador
-    const playerBestCountry = {};
-    for (const steamId of allUniqueSteamIds) {
-        const counts = playerCountryFrequencies[steamId] || {};
-        const sortedCountryIds = Object.keys(counts).map(Number).sort((a, b) => counts[b] - counts[a]);
-
-        if (sortedCountryIds.length > 0) {
-            let bestCountryId = sortedCountryIds[0];
-            if (getCountrySigla(bestCountryId) === 'aa' && sortedCountryIds.length > 1) {
-                bestCountryId = sortedCountryIds[1];
-            }
-            playerBestCountry[steamId] = bestCountryId;
-        } else {
-            playerBestCountry[steamId] = null;
-        }
-    }
-
-    // Calcula SSR e SSR-W tradicionais
+    // Calcula ratings globais
     const playerRatings = computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack);
-
-    // Calcula SSR-FI global
     const playerFiRatings = computePlayerFiRatings(allUniqueSteamIds, playerFiScoresPerTrack);
-
-    // Calcula C-SSR global para os países
     const countryRatings = computeCountryRatings(allUniqueCountryIds, countryScoresPerTrack);
 
-    // Passo D: Sincroniza os dados detalhados das pistas (incluindo score_fi)
+    // Passo D: Sincroniza dados das pistas
     console.log("[Leaderboards] Enviando dados calculados das pistas para o Supabase...");
 
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
@@ -186,7 +205,7 @@ async function processAndSyncLeaderboardsAndRatings() {
         console.log(`[Leaderboards] Pista #${trackIndex} sincronizada (${rowsToUpsert.length} registros).`);
     }
 
-    // Passo E: Atualiza jogadores (incluindo o ssr_fi)
+    // Passo E: Atualiza jogadores
     console.log("[Players] Atualizando pontuações, país oficial e SSR-FI na tabela de jogadores...");
     const playerRowsToUpsert = [];
 

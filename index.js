@@ -1,4 +1,4 @@
-const { syncCars, syncCountries, syncTracks, syncPlayersMetadata } = require('./syncMetadata');
+const { syncCars, syncCountries, syncManualCountries, syncTracks, syncPlayersMetadata } = require('./syncMetadata');
 const { processAndSyncLeaderboardsAndRatings } = require('./mathEngine');
 
 async function main() {
@@ -6,6 +6,7 @@ async function main() {
 
     await syncCars();
     await syncCountries();
+    await syncManualCountries();
     await syncTracks();
     await syncPlayersMetadata();
     await processAndSyncLeaderboardsAndRatings();

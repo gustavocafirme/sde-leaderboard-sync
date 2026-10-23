@@ -3,8 +3,9 @@ const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir } = require('./config');
 
-const countryNamesMap = new Map();   // countryId -> countryName (sigla, ex: "br", "aa")
-const countrySiglaMap = new Map();   // countryId -> sigla em minúsculo para validação
+const countryNamesMap = new Map();    // countryId -> countryName (sigla, ex: "br", "aa")
+const countrySiglaMap = new Map();    // countryId -> sigla em minúsculo para validação
+const manualCountriesMap = new Map(); // steamId   -> countryId manual
 const playerNamesMap = new Map();
 
 async function syncCars() {
@@ -42,7 +43,9 @@ async function syncCountries() {
     }
 
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
-    const rows = [];
+    
+    // Mapeamento temporário para consolidar países canônicos únicos
+    const canonicalCountriesMap = new Map(); // canonicalSigla -> { country_id, country_name, country_full_name }
 
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(',');
@@ -51,22 +54,49 @@ async function syncCountries() {
             const countryName = parts[1].replace(/"/g, '').trim();
             const countryFullName = parts.slice(2).join(',').replace(/"/g, '').trim();
 
-            countryNamesMap.set(countryId, countryName);
-            countrySiglaMap.set(countryId, countryName.toLowerCase());
+            // Descobre qual é a sigla canônica unificada (ex: "um" vira "us", "gb-eng" vira "gb")
+            // Como precisamos da função auxiliar, vamos tratá-la inline ou garantir que getCountryCanonicalSigla use getCountrySigla.
+            let sigla = countryName.toLowerCase();
+            let canonicalSigla = sigla;
+            let canonicalName = countryName;
+            let canonicalFullName = countryFullName;
 
-            rows.push({
-                country_id: countryId,
-                country_name: countryName,
-                country_full_name: countryFullName
-            });
+            if (sigla === 'um' || sigla === 'vi' || sigla === 'pr' || sigla === 'gu' || sigla === 'as' || sigla === 'mp') {
+                canonicalSigla = 'us'; canonicalName = 'us'; canonicalFullName = 'United States';
+            } else if (sigla.startsWith('gb-')) {
+                canonicalSigla = 'gb'; canonicalName = 'gb'; canonicalFullName = 'United Kingdom';
+            } else if (sigla === 'sj' || sigla === 'bv') {
+                canonicalSigla = 'no'; canonicalName = 'no'; canonicalFullName = 'Norway';
+            } else if (sigla === 'ax') {
+                canonicalSigla = 'fi'; canonicalName = 'fi'; canonicalFullName = 'Finland';
+            } else if (sigla === 'gl' || sigla === 'fo') {
+                canonicalSigla = 'dk'; canonicalName = 'dk'; canonicalFullName = 'Denmark';
+            } else if (sigla === 'cx' || sigla === 'cc' || sigla === 'hm' || sigla === 'nf') {
+                canonicalSigla = 'au'; canonicalName = 'au'; canonicalFullName = 'Australia';
+            }
+
+            // Armazena mantendo o primeiro ID encontrado (ou o ID principal do país) como referência canônica
+            if (!canonicalCountriesMap.has(canonicalSigla)) {
+                canonicalCountriesMap.set(canonicalSigla, {
+                    country_id: countryId, // Usa o ID do país principal
+                    country_name: canonicalName,
+                    country_full_name: canonicalFullName
+                });
+            }
+
+            // Popula os mapas locais para o mathEngine continuar funcionando perfeitamente
+            countryNamesMap.set(countryId, canonicalName);
+            countrySiglaMap.set(countryId, sigla);
         }
     }
+
+    const rows = Array.from(canonicalCountriesMap.values());
 
     const { error } = await supabase.from('countries').upsert(rows, { onConflict: 'country_id' });
     if (error) {
         console.error("[Countries] Erro ao enviar para o Supabase:", error.message);
     } else {
-        console.log(`[Countries] ${rows.length} países sincronizados com sucesso.`);
+        console.log(`[Countries] ${rows.length} países canônicos unificados sincronizados com sucesso.`);
     }
 }
 
@@ -88,6 +118,35 @@ function getCountryCanonicalSigla(countryId) {
     if (sigla === 'gl' || sigla === 'fo') return 'dk';
     if (sigla === 'cx' || sigla === 'cc' || sigla === 'hm' || sigla === 'nf') return 'au';
     return sigla;
+}
+
+async function syncManualCountries() {
+    const filePath = path.join(trackingDir, 'manual_countries.csv');
+    if (!fs.existsSync(filePath)) {
+        return; // Arquivo opcional caso o mod ainda não tenha gerado
+    }
+
+    const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+    for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(',');
+        if (parts.length >= 2) {
+            const steamId = parts[0].trim();
+            const countrySigla = parts[1].replace(/"/g, '').trim().toLowerCase();
+
+            // Busca o country_id correspondente à sigla na nossa tabela/mapa de países
+            for (const [cId, sigla] of countrySiglaMap.entries()) {
+                if (sigla === countrySigla) {
+                    manualCountriesMap.set(steamId, cId);
+                    break;
+                }
+            }
+        }
+    }
+    console.log(`[Manual Countries] ${manualCountriesMap.size} nacionalidades manuais carregadas.`);
+}
+
+function getManualCountryId(steamId) {
+    return manualCountriesMap.get(steamId) || null;
 }
 
 async function syncTracks() {
@@ -155,10 +214,12 @@ function getPlayerName(steamId) {
 module.exports = {
     syncCars,
     syncCountries,
+    syncManualCountries,
     syncTracks,
     syncPlayersMetadata,
     getPlayerName,
     getCountryName,
     getCountrySigla,
-    getCountryCanonicalSigla
+    getCountryCanonicalSigla,
+    getManualCountryId
 };

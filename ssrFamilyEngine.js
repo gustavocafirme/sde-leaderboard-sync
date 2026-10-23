@@ -2,15 +2,14 @@ const { totalTracks, scorePowerFactor, scoreWDecayFactor, ssrWFinalPowerPass, co
 
 function calculateEffectiveTime(timeMs) {
     const timeInSeconds = timeMs / 1000.0;
-    // O tick time de uso universal ou específico do SSR pode ser calculado aqui ou repassado
     return timeInSeconds;
 }
 
 /**
  * Calcula os scores, posições e desempates (to2nd) para as entradas de uma pista.
- * Também calcula o C-Score por país dentro da pista.
+ * Também calcula o C-Score por país unificado (usando o país oficial do jogador se fornecido).
  */
-function processTrackRatings(trackEntries, tickTimeCalculator) {
+function processTrackRatings(trackEntries, tickTimeCalculator, playerBestCountryMap = null) {
     if (!trackEntries || trackEntries.length === 0) return { trackEntries, countryScores: {} };
 
     // Ordena por Effective Time crescente
@@ -48,13 +47,21 @@ function processTrackRatings(trackEntries, tickTimeCalculator) {
         }
     }
 
-    // Agrupamento e cálculo do C-Score por país unificado na pista
+    // Agrupamento e cálculo do C-Score por país na pista.
+    // Se o playerBestCountryMap estiver disponível, usamos o país oficial definitivo do jogador!
     const entriesByCountry = {};
     for (const entry of trackEntries) {
-        if (!entriesByCountry[entry.countryId]) {
-            entriesByCountry[entry.countryId] = [];
+        const effectiveCountryId = (playerBestCountryMap && playerBestCountryMap[entry.steamId] !== undefined && playerBestCountryMap[entry.steamId] !== null)
+            ? playerBestCountryMap[entry.steamId]
+            : entry.countryId;
+
+        // Atualiza a entrada com o país oficial utilizado para o C-Score
+        entry.effectiveCountryId = effectiveCountryId;
+
+        if (!entriesByCountry[effectiveCountryId]) {
+            entriesByCountry[effectiveCountryId] = [];
         }
-        entriesByCountry[entry.countryId].push(entry);
+        entriesByCountry[effectiveCountryId].push(entry);
     }
 
     const trackCountryScores = {};
@@ -110,7 +117,7 @@ function computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack) {
                 return b.score - a.score;
             }
             const to2ndA = a.entry ? a.entry.to2nd : 0.0;
-            const to2ndB = b.entry ? b.entry.to2nd : 0.0;
+            const to2ndB = a.entry ? a.entry.to2nd : 0.0;
             return to2ndB - to2ndA;
         });
 
