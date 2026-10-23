@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir } = require('./config');
-const countryNamesMap = new Map();
 
+const countryNamesMap = new Map();   // countryId -> countryName (sigla, ex: "br", "aa")
+const countrySiglaMap = new Map();   // countryId -> sigla em minúsculo para validação
 const playerNamesMap = new Map();
 
 async function syncCars() {
@@ -51,6 +52,8 @@ async function syncCountries() {
             const countryFullName = parts.slice(2).join(',').replace(/"/g, '').trim();
 
             countryNamesMap.set(countryId, countryName);
+            countrySiglaMap.set(countryId, countryName.toLowerCase());
+
             rows.push({
                 country_id: countryId,
                 country_name: countryName,
@@ -71,6 +74,22 @@ function getCountryName(countryId) {
     return countryNamesMap.get(countryId) || "Unknown";
 }
 
+function getCountrySigla(countryId) {
+    return countrySiglaMap.get(countryId) || "";
+}
+
+// Adicione um mapa para rastrear o ID canônico ou exporte a função auxiliar:
+function getCountryCanonicalSigla(countryId) {
+    const sigla = getCountrySigla(countryId);
+    if (sigla === 'um' || sigla === 'vi' || sigla === 'pr' || sigla === 'gu' || sigla === 'as' || sigla === 'mp') return 'us';
+    if (sigla.startsWith('gb-')) return 'gb';
+    if (sigla === 'sj' || sigla === 'bv') return 'no';
+    if (sigla === 'ax') return 'fi';
+    if (sigla === 'gl' || sigla === 'fo') return 'dk';
+    if (sigla === 'cx' || sigla === 'cc' || sigla === 'hm' || sigla === 'nf') return 'au';
+    return sigla;
+}
+
 async function syncTracks() {
     const filePath = path.join(trackingDir, 'tracks.csv');
     if (!fs.existsSync(filePath)) {
@@ -81,7 +100,6 @@ async function syncTracks() {
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
     const rows = [];
 
-    // Ignora o cabeçalho (i = 1)
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(',');
         if (parts.length >= 2) {
@@ -140,5 +158,7 @@ module.exports = {
     syncTracks,
     syncPlayersMetadata,
     getPlayerName,
-    getCountryName
+    getCountryName,
+    getCountrySigla,
+    getCountryCanonicalSigla
 };
