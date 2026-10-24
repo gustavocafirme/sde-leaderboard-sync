@@ -216,6 +216,10 @@ async function processAndSyncLeaderboardsAndRatings() {
         const playerName = getPlayerName(steamId);
         const bestCountryId = playerBestCountry[steamId];
 
+        // Conta quantos mapas o jogador realmente jogou/pontuou
+        const playerTracks = playerScoresPerTrack[steamId] || {};
+        const mapsPlayed = Object.keys(playerTracks).length;
+
         if (rating) {
             playerRowsToUpsert.push({
                 steam_id: steamId,
@@ -223,7 +227,8 @@ async function processAndSyncLeaderboardsAndRatings() {
                 ssr: rating.ssr,
                 ssr_w: rating.ssrW,
                 ssr_fi: fiRating ? fiRating.ssrFi : 0.0,
-                country_id: bestCountryId
+                country_id: bestCountryId,
+                maps_played: mapsPlayed
             });
         }
     }
