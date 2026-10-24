@@ -51,10 +51,11 @@ function processTrackRatings(trackEntries, playerBestCountryMap = null) {
 
     for (let index = 0; index < trackEntries.length; index++) {
         const entry = trackEntries[index];
-        if (entry.calculatedPosition === 1) {
+        if (entry.timeInSeconds === trackEntries[0].timeInSeconds) {
             entry.to2nd = entry.score - trackEntries[1].score;
-        } else {
-            entry.to2nd = 0.0;
+        }
+        else {
+            entry.to2nd = null;
         }
     }
 
