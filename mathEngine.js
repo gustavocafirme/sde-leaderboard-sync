@@ -3,9 +3,12 @@ const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir, totalTracks } = require('./config');
 const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId } = require('./syncMetadata');
-const { processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
+const { calculateEffectiveTime, processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
 const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
 
+/**
+ * Função universal para cálculo do Tick Time (Frame Time)
+ */
 function calculateTickTime(timeInSeconds) {
     if (Number(timeInSeconds.toFixed(2)) === timeInSeconds) {
         return timeInSeconds;
@@ -47,7 +50,7 @@ async function processAndSyncLeaderboardsAndRatings() {
     const allUniqueCountryIds = new Set();
     const playerCountryFrequencies = {};
 
-    // 1ª ETAPA: Carrega todas as pistas e acumula as frequências de países por jogador
+    // 1ª ETAPA: Carrega todas as pistas calculando Tick Time e Effective Time de forma unificada
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
         const filePath = path.join(leaderboardsDir, `leaderboard_track_${trackIndex}.csv`);
         if (!fs.existsSync(filePath)) continue;
@@ -75,8 +78,7 @@ async function processAndSyncLeaderboardsAndRatings() {
 
                 const timeInSeconds = timeMs / 1000.0;
                 const tickTime = calculateTickTime(timeInSeconds);
-                const timeWeight = Math.min(0.316 * Math.tanh((tickTime - 91.15) / 28.51) + 0.884, 1);
-                const effectiveTime = (timeInSeconds * timeWeight) + (tickTime * (1 - timeWeight));
+                const effectiveTime = calculateEffectiveTime(timeInSeconds, tickTime);
 
                 trackEntries.push({
                     steamId,
@@ -133,13 +135,12 @@ async function processAndSyncLeaderboardsAndRatings() {
     const playerFiScoresPerTrack = {};
     const countryScoresPerTrack = {};
 
-    // 2ª ETAPA: Processa as pontuações e o C-Score das pistas utilizando o país oficial do jogador (`playerBestCountry`)
+    // 2ª ETAPA: Processa as pontuações e o C-Score das pistas utilizando o país oficial do jogador
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
         const trackEntries = rawTracksEntries[trackIndex];
         if (!trackEntries || trackEntries.length === 0) continue;
 
-        // Processa SSR passando o mapa do país oficial do jogador
-        const processedSSR = processTrackRatings(trackEntries, calculateTickTime, playerBestCountry);
+        const processedSSR = processTrackRatings(trackEntries, playerBestCountry);
         const processedFI = processTrackFiRatings(processedSSR.trackEntries);
 
         allTracksData[trackIndex] = processedFI;
@@ -256,18 +257,17 @@ async function processAndSyncLeaderboardsAndRatings() {
         }
     }
 
-    const countryChunkSize = 500;
-    for (let i = 0; i < countryRowsToUpsert.length; i += countryChunkSize) {
-        const chunk = countryRowsToUpsert.slice(i, i + countryChunkSize);
+    if (countryRowsToUpsert.length > 0) {
         const { error } = await supabase
             .from('countries')
-            .upsert(chunk, { onConflict: 'country_id' });
+            .upsert(countryRowsToUpsert, { onConflict: 'country_id' });
 
         if (error) {
-            console.error(`[Countries Ratings] Erro no lote ${i}:`, error.message);
+            console.error("[Countries Ratings] Erro ao atualizar países:", error.message);
+        } else {
+            console.log(`[Countries] C-SSR de ${countryRowsToUpsert.length} países atualizados com sucesso.`);
         }
     }
-    console.log(`[Countries] C-SSR de ${countryRowsToUpsert.length} países atualizados com sucesso.`);
 }
 
 module.exports = {

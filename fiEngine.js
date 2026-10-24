@@ -2,17 +2,17 @@ const { totalTracks } = require('./config');
 
 /**
  * Calcula o score_fi para cada entrada de uma pista.
- * Fórmula: score_fi = Wr / Pft (onde Wr é o tempo do 1º lugar e Pft é o tempo do jogador)
+ * Fórmula: score_fi = Wr / Pft (onde Wr é o tick time do 1º lugar e Pft é o tick time do jogador)
  */
 function processTrackFiRatings(trackEntries) {
     if (!trackEntries || trackEntries.length === 0) return trackEntries;
 
-    // O World Record (Wr) é o menor tempo da pista (assumindo que trackEntries já está ordenado por tempo)
-    const worldRecordTime = trackEntries[0].timeInSeconds; // ou effectiveTime / timeMs dependendo da base
+    // O World Record (Wr) usa o tickTime do 1º colocado (já ordenado por effectiveTime/tempo)
+    const worldRecordTime = trackEntries[0].tickTime;
 
     for (let index = 0; index < trackEntries.length; index++) {
         const entry = trackEntries[index];
-        const playerTime = entry.timeInSeconds; // Pft (Player time / frame time)
+        const playerTime = entry.tickTime; // Pft (Player frame time baseado no tick)
 
         let scoreFi = 0;
         if (playerTime > 0) {

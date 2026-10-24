@@ -1,15 +1,26 @@
 const { totalTracks, scorePowerFactor, scoreWDecayFactor, ssrWFinalPowerPass, countryContributionFactor } = require('./config');
 
-function calculateEffectiveTime(timeMs) {
-    const timeInSeconds = timeMs / 1000.0;
-    return timeInSeconds;
+/**
+ * Calcula o Tick Time e o Effective Time oficial para uma entrada de tempo.
+ * Fórmulas:
+ * Wt = Min( 0.316 * Tanh((Tt-91.15)/28.51) + 0.884; 1)
+ * Et = T * Wt + Tt * (1 - Wt)
+ */
+
+/**
+ * Calcula o Effective Time recebendo o tempo em segundos puro
+ */
+function calculateEffectiveTime(timeInSeconds, tickTime) {
+    const weight = Math.min(0.316 * Math.tanh((tickTime - 91.15) / 28.51) + 0.884, 1);
+    const effectiveTime = (timeInSeconds * weight) + (tickTime * (1 - weight));
+    return effectiveTime;
 }
 
 /**
  * Calcula os scores, posições e desempates (to2nd) para as entradas de uma pista.
  * Também calcula o C-Score por país unificado (usando o país oficial do jogador se fornecido).
  */
-function processTrackRatings(trackEntries, tickTimeCalculator, playerBestCountryMap = null) {
+function processTrackRatings(trackEntries, playerBestCountryMap = null) {
     if (!trackEntries || trackEntries.length === 0) return { trackEntries, countryScores: {} };
 
     // Ordena por Effective Time crescente
@@ -47,15 +58,13 @@ function processTrackRatings(trackEntries, tickTimeCalculator, playerBestCountry
         }
     }
 
-    // Agrupamento e cálculo do C-Score por país na pista.
-    // Se o playerBestCountryMap estiver disponível, usamos o país oficial definitivo do jogador!
+    // Agrupamento e cálculo do C-Score por país na pista usando o país oficial do jogador
     const entriesByCountry = {};
     for (const entry of trackEntries) {
         const effectiveCountryId = (playerBestCountryMap && playerBestCountryMap[entry.steamId] !== undefined && playerBestCountryMap[entry.steamId] !== null)
             ? playerBestCountryMap[entry.steamId]
             : entry.countryId;
 
-        // Atualiza a entrada com o país oficial utilizado para o C-Score
         entry.effectiveCountryId = effectiveCountryId;
 
         if (!entriesByCountry[effectiveCountryId]) {
@@ -94,6 +103,7 @@ function processTrackRatings(trackEntries, tickTimeCalculator, playerBestCountry
 
 /**
  * Calcula globalmente o SSR, SSR-W e Score-W de cada jogador.
+ * Ordena os scores considerando rigorosamente o desempate pela coluna `to2nd` (maior to2nd fica mais alto).
  */
 function computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack) {
     const playerRatings = {};
@@ -112,12 +122,13 @@ function computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack) {
             allScores.push({ trackIndex, score: scoreValue, entry });
         }
 
+        // Ordenação primária por score decrescente, secundária por to2nd decrescente
         allScores.sort((a, b) => {
             if (b.score !== a.score) {
                 return b.score - a.score;
             }
             const to2ndA = a.entry ? a.entry.to2nd : 0.0;
-            const to2ndB = a.entry ? a.entry.to2nd : 0.0;
+            const to2ndB = b.entry ? b.entry.to2nd : 0.0;
             return to2ndB - to2ndA;
         });
 
@@ -170,6 +181,7 @@ function computeCountryRatings(allUniqueCountryIds, countryScoresPerTrack) {
 }
 
 module.exports = {
+    calculateEffectiveTime,
     processTrackRatings,
     computePlayerRatings,
     computeCountryRatings
