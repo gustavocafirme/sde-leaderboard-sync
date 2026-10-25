@@ -43,49 +43,43 @@ async function syncCountries() {
     }
 
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
-    
-    // Mapeamento temporário para consolidar países canônicos únicos
-    const canonicalCountriesMap = new Map(); // canonicalSigla -> { country_id, country_name, country_full_name }
+    const canonicalCountriesMap = new Map();
 
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(',');
         if (parts.length >= 3) {
             const countryId = parseInt(parts[0].trim());
-            const countryName = parts[1].replace(/"/g, '').trim();
-            const countryFullName = parts.slice(2).join(',').replace(/"/g, '').trim();
+            const countryAcronym = parts[1].replace(/"/g, '').trim(); // Antigo country_name (ex: "br")
+            const countryName = parts.slice(2).join(',').replace(/"/g, '').trim(); // Antigo country_full_name (ex: "Brazil")
 
-            // Descobre qual é a sigla canônica unificada (ex: "um" vira "us", "gb-eng" vira "gb")
-            // Como precisamos da função auxiliar, vamos tratá-la inline ou garantir que getCountryCanonicalSigla use getCountrySigla.
-            let sigla = countryName.toLowerCase();
+            let sigla = countryAcronym.toLowerCase();
             let canonicalSigla = sigla;
+            let canonicalAcronym = countryAcronym;
             let canonicalName = countryName;
-            let canonicalFullName = countryFullName;
 
             if (sigla === 'um' || sigla === 'vi' || sigla === 'pr' || sigla === 'gu' || sigla === 'as' || sigla === 'mp') {
-                canonicalSigla = 'us'; canonicalName = 'us'; canonicalFullName = 'United States';
+                canonicalSigla = 'us'; canonicalAcronym = 'us'; canonicalName = 'United States';
             } else if (sigla.startsWith('gb-')) {
-                canonicalSigla = 'gb'; canonicalName = 'gb'; canonicalFullName = 'United Kingdom';
+                canonicalSigla = 'gb'; canonicalAcronym = 'gb'; canonicalName = 'United Kingdom';
             } else if (sigla === 'sj' || sigla === 'bv') {
-                canonicalSigla = 'no'; canonicalName = 'no'; canonicalFullName = 'Norway';
+                canonicalSigla = 'no'; canonicalAcronym = 'no'; canonicalName = 'Norway';
             } else if (sigla === 'ax') {
-                canonicalSigla = 'fi'; canonicalName = 'fi'; canonicalFullName = 'Finland';
+                canonicalSigla = 'fi'; canonicalAcronym = 'fi'; canonicalName = 'Finland';
             } else if (sigla === 'gl' || sigla === 'fo') {
-                canonicalSigla = 'dk'; canonicalName = 'dk'; canonicalFullName = 'Denmark';
+                canonicalSigla = 'dk'; canonicalAcronym = 'dk'; canonicalName = 'Denmark';
             } else if (sigla === 'cx' || sigla === 'cc' || sigla === 'hm' || sigla === 'nf') {
-                canonicalSigla = 'au'; canonicalName = 'au'; canonicalFullName = 'Australia';
+                canonicalSigla = 'au'; canonicalAcronym = 'au'; canonicalName = 'Australia';
             }
 
-            // Armazena mantendo o primeiro ID encontrado (ou o ID principal do país) como referência canônica
             if (!canonicalCountriesMap.has(canonicalSigla)) {
                 canonicalCountriesMap.set(canonicalSigla, {
-                    country_id: countryId, // Usa o ID do país principal
-                    country_name: canonicalName,
-                    country_full_name: canonicalFullName
+                    country_id: countryId,
+                    country_acronym: canonicalAcronym, // Novo nome da coluna
+                    country_name: canonicalName        // Novo nome da coluna (nome completo)
                 });
             }
 
-            // Popula os mapas locais para o mathEngine continuar funcionando perfeitamente
-            countryNamesMap.set(countryId, canonicalName);
+            countryNamesMap.set(countryId, canonicalAcronym);
             countrySiglaMap.set(countryId, sigla);
         }
     }

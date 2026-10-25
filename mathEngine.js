@@ -27,10 +27,10 @@ async function processAndSyncLeaderboardsAndRatings() {
     const canonicalSiglaToIdMap = {};
     const rawCountryIdToCanonicalId = {};
 
-    const { data: countriesData, error: countriesError } = await supabase.from('countries').select('country_id, country_name');
+    const { data: countriesData, error: countriesError } = await supabase.from('countries').select('country_id, country_acronym');
     if (!countriesError && countriesData) {
         for (const c of countriesData) {
-            const sigla = c.country_name.toLowerCase();
+            const sigla = c.country_acronym.toLowerCase();
             canonicalSiglaToIdMap[sigla] = c.country_id;
         }
     }
@@ -256,8 +256,8 @@ async function processAndSyncLeaderboardsAndRatings() {
         if (rating) {
             countryRowsToUpsert.push({
                 country_id: countryId,
-                country_name: countryName,
-                cssr: rating.cssr
+                country_acronym: countryName,
+                c_ssr: rating.cssr
             });
         }
     }
