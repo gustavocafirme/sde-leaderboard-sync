@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
-const { trackingDir, totalTracks } = require('./config');
+const { trackingDir, totalTracks, prestigePointsTable } = require('./config');
 const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId } = require('./syncMetadata');
 const { calculateEffectiveTime, processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
 const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
@@ -210,7 +210,7 @@ async function processAndSyncLeaderboardsAndRatings() {
     }
 
     // Passo E: Atualiza jogadores
-    console.log("[Players] Atualizando pontuações, país oficial e SSR-FI na tabela de jogadores...");
+    console.log("[Players] Atualizando pontuações, país oficial, SSR-FI e Prestige Points na tabela de jogadores...");
     const playerRowsToUpsert = [];
 
     for (const steamId of allUniqueSteamIds) {
@@ -219,9 +219,19 @@ async function processAndSyncLeaderboardsAndRatings() {
         const playerName = getPlayerName(steamId);
         const bestCountryId = playerBestCountry[steamId];
 
-        // Conta quantos mapas o jogador realmente jogou/pontuou
+        // Conta quantos mapas o jogador realmente jogou/pontuou e calcula os Prestige Points (pp)
         const playerTracks = playerScoresPerTrack[steamId] || {};
         const mapsPlayed = Object.keys(playerTracks).length;
+
+        let totalPrestigePoints = 0.0;
+        for (const trackIndexStr in playerTracks) {
+            const entry = playerTracks[trackIndexStr];
+            // Usa o rank original (originalPosition) ou a posição calculada. O ideal para Prestige Points é o rank real obtido na pista:
+            const rank = entry.originalPosition; 
+            if (rank >= 1 && rank < prestigePointsTable.length) {
+                totalPrestigePoints += prestigePointsTable[rank];
+            }
+        }
 
         if (rating) {
             playerRowsToUpsert.push({
@@ -231,7 +241,8 @@ async function processAndSyncLeaderboardsAndRatings() {
                 ssr_w: rating.ssrW,
                 ssr_fi: fiRating ? fiRating.ssrFi : 0.0,
                 country_id: bestCountryId,
-                maps_played: mapsPlayed
+                maps_played: mapsPlayed,
+                prestige_points: totalPrestigePoints
             });
         }
     }
