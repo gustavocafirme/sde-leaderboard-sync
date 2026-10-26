@@ -60,13 +60,14 @@ async function processAndSyncLeaderboardsAndRatings() {
 
         for (let i = 1; i < lines.length; i++) {
             const parts = lines[i].split(',');
-            if (parts.length >= 5) {
+            if (parts.length >= 6) {
                 const originalPosition = parseInt(parts[0].trim());
                 const steamId = parts[1].trim();
                 const rawCountryId = parseInt(parts[2].trim());
                 const countryId = resolveCanonicalCountryId(rawCountryId);
                 const carId = parseInt(parts[3].trim());
                 const timeMs = parseInt(parts[4].trim());
+                const scoreOfficial = parseFloat(parts[5].trim()) / 100 || 0.0;
 
                 allUniqueSteamIds.add(steamId);
                 allUniqueCountryIds.add(countryId);
@@ -88,7 +89,8 @@ async function processAndSyncLeaderboardsAndRatings() {
                     timeInSeconds,
                     tickTime,
                     effectiveTime,
-                    originalPosition
+                    originalPosition,
+                    scoreOfficial
                 });
             }
         }
@@ -188,7 +190,8 @@ async function processAndSyncLeaderboardsAndRatings() {
                 score_w: scoreW,
                 to2nd: entry.to2nd,
                 c_score: entry.cScore || 0.0,
-                score_fi: entry.scoreFi || 0.0
+                score_fi: entry.scoreFi || 0.0,
+                score_official: entry.scoreOfficial || 0.0
             };
         });
 

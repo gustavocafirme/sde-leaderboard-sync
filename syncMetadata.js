@@ -181,12 +181,41 @@ async function syncPlayersMetadata() {
     const rows = [];
 
     for (let i = 1; i < lines.length; i++) {
-        const commaIndex = lines[i].indexOf(',');
-        if (commaIndex !== -1) {
-            const steamId = lines[i].substring(0, commaIndex).trim();
-            const playerName = lines[i].substring(commaIndex + 1).replace(/"/g, '').trim();
+        const line = lines[i];
+        const comma1 = line.indexOf(',');
+        if (comma1 !== -1) {
+            const steamId = line.substring(0, comma1).trim();
+            const rest = line.substring(comma1 + 1);
+            
+            let playerName = "";
+            let skillRatingOfficial = 0.0;
+
+            if (rest.startsWith('"')) {
+                const closingQuote = rest.indexOf('"', 1);
+                if (closingQuote !== -1) {
+                    playerName = rest.substring(1, closingQuote).replace(/""/g, '"').trim();
+                    const afterQuote = rest.substring(closingQuote + 1);
+                    const comma2 = afterQuote.indexOf(',');
+                    if (comma2 !== -1) {
+                        skillRatingOfficial = parseFloat(afterQuote.substring(comma2 + 1).trim()) / 100 || 0.0;
+                    }
+                }
+            } else {
+                const comma2 = rest.indexOf(',');
+                if (comma2 !== -1) {
+                    playerName = rest.substring(0, comma2).replace(/"/g, '').trim();
+                    skillRatingOfficial = parseFloat(rest.substring(comma2 + 1).trim()) / 100 || 0.0;
+                } else {
+                    playerName = rest.replace(/"/g, '').trim();
+                }
+            }
+
             playerNamesMap.set(steamId, playerName);
-            rows.push({ steam_id: steamId, player_name: playerName });
+            rows.push({
+                steam_id: steamId,
+                player_name: playerName,
+                skill_rating_official: skillRatingOfficial
+            });
         }
     }
 
@@ -198,7 +227,7 @@ async function syncPlayersMetadata() {
             console.error(`[Players] Erro no lote ${i}:`, error.message);
         }
     }
-    console.log(`[Players] ${rows.length} jogadores processados.`);
+    console.log(`[Players] ${rows.length} jogadores processados com skill rating oficial.`);
 }
 
 function getPlayerName(steamId) {
