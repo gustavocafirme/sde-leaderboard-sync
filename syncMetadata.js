@@ -5,6 +5,7 @@ const { trackingDir } = require('./config');
 
 const countryNamesMap = new Map();    // countryId -> countryName (sigla, ex: "br", "aa")
 const countrySiglaMap = new Map();    // countryId -> sigla em minúsculo para validação
+const countryFullNameMap = new Map(); // countryId -> countryFullName (ex: "Brazil")
 const manualCountriesMap = new Map(); // steamId   -> countryId manual
 const playerNamesMap = new Map();
 
@@ -35,7 +36,11 @@ async function syncCars() {
     }
 }
 
-async function syncCountries() {
+/**
+ * Carrega os países do CSV para a memória local (obrigatório para o mathEngine) 
+ * e opcionalmente faz o upsert no Supabase.
+ */
+async function syncCountries(shouldUpsert = true) {
     const filePath = path.join(trackingDir, 'countries.csv');
     if (!fs.existsSync(filePath)) {
         console.log("[Countries] Arquivo countries.csv não encontrado.");
@@ -49,8 +54,8 @@ async function syncCountries() {
         const parts = lines[i].split(',');
         if (parts.length >= 3) {
             const countryId = parseInt(parts[0].trim());
-            const countryAcronym = parts[1].replace(/"/g, '').trim(); // Antigo country_name (ex: "br")
-            const countryName = parts.slice(2).join(',').replace(/"/g, '').trim(); // Antigo country_full_name (ex: "Brazil")
+            const countryAcronym = parts[1].replace(/"/g, '').trim();
+            const countryName = parts.slice(2).join(',').replace(/"/g, '').trim();
 
             let sigla = countryAcronym.toLowerCase();
             let canonicalSigla = sigla;
@@ -74,18 +79,23 @@ async function syncCountries() {
             if (!canonicalCountriesMap.has(canonicalSigla)) {
                 canonicalCountriesMap.set(canonicalSigla, {
                     country_id: countryId,
-                    country_acronym: canonicalAcronym, // Novo nome da coluna
-                    country_name: canonicalName        // Novo nome da coluna (nome completo)
+                    country_acronym: canonicalAcronym,
+                    country_name: canonicalName
                 });
             }
 
             countryNamesMap.set(countryId, canonicalAcronym);
             countrySiglaMap.set(countryId, sigla);
+            countryFullNameMap.set(countryId, canonicalName);
         }
     }
 
-    const rows = Array.from(canonicalCountriesMap.values());
+    // Se o upsert não foi solicitado, encerra aqui após popular a memória RAM
+    if (!shouldUpsert) {
+        return;
+    }
 
+    const rows = Array.from(canonicalCountriesMap.values());
     const { error } = await supabase.from('countries').upsert(rows, { onConflict: 'country_id' });
     if (error) {
         console.error("[Countries] Erro ao enviar para o Supabase:", error.message);
@@ -102,7 +112,6 @@ function getCountrySigla(countryId) {
     return countrySiglaMap.get(countryId) || "";
 }
 
-// Adicione um mapa para rastrear o ID canônico ou exporte a função auxiliar:
 function getCountryCanonicalSigla(countryId) {
     const sigla = getCountrySigla(countryId);
     if (sigla === 'um' || sigla === 'vi' || sigla === 'pr' || sigla === 'gu' || sigla === 'as' || sigla === 'mp') return 'us';
@@ -117,7 +126,7 @@ function getCountryCanonicalSigla(countryId) {
 async function syncManualCountries() {
     const filePath = path.join(trackingDir, 'manual_countries.csv');
     if (!fs.existsSync(filePath)) {
-        return; // Arquivo opcional caso o mod ainda não tenha gerado
+        return; 
     }
 
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
@@ -127,7 +136,6 @@ async function syncManualCountries() {
             const steamId = parts[0].trim();
             const countrySigla = parts[1].replace(/"/g, '').trim().toLowerCase();
 
-            // Busca o country_id correspondente à sigla na nossa tabela/mapa de países
             for (const [cId, sigla] of countrySiglaMap.entries()) {
                 if (sigla === countrySigla) {
                     manualCountriesMap.set(steamId, cId);
@@ -136,7 +144,6 @@ async function syncManualCountries() {
             }
         }
     }
-    console.log(`[Manual Countries] ${manualCountriesMap.size} nacionalidades manuais carregadas.`);
 }
 
 function getManualCountryId(steamId) {
@@ -170,7 +177,11 @@ async function syncTracks() {
     }
 }
 
-async function syncPlayersMetadata() {
+/**
+ * Carrega os nomes dos jogadores para a memória local (necessário para o mathEngine)
+ * e opcionalmente faz o upsert na tabela de jogadores do Supabase.
+ */
+async function syncPlayersMetadata(shouldUpsert = true) {
     const filePath = path.join(trackingDir, 'players.csv');
     if (!fs.existsSync(filePath)) {
         console.log("[Players] Arquivo players.csv não encontrado.");
@@ -219,6 +230,11 @@ async function syncPlayersMetadata() {
         }
     }
 
+    // Se o upsert não foi solicitado, encerra aqui após popular a memória RAM
+    if (!shouldUpsert) {
+        return;
+    }
+
     const chunkSize = 500;
     for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize);
@@ -234,6 +250,10 @@ function getPlayerName(steamId) {
     return playerNamesMap.get(steamId) || "Unknown";
 }
 
+function getCountryFullName(countryId) {
+    return countryFullNameMap.get(countryId) || "Unknown";
+}
+
 module.exports = {
     syncCars,
     syncCountries,
@@ -244,5 +264,6 @@ module.exports = {
     getCountryName,
     getCountrySigla,
     getCountryCanonicalSigla,
-    getManualCountryId
+    getManualCountryId,
+    getCountryFullName
 };
