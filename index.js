@@ -19,11 +19,11 @@ async function main() {
     else {
         if (args.includes('--tracks')) runTracks = true;
         if (args.includes('--cars')) runCars = true;
+        
+        // O argumento unificado desativa todo o bloco principal de dados dinâmicos
+        // O argumento --countries antigo agora mapeia para a flag unificada ou é coberto por ela
+        if (args.includes('--noplayersandleaderboards') && !args.includes('--countries')) runPlayersAndLeaderboardsAndCountries = false;
     }
-
-    // O argumento unificado desativa todo o bloco principal de dados dinâmicos
-    // O argumento --countries antigo agora mapeia para a flag unificada ou é coberto por ela
-    if (args.includes('--noplayersandleaderboards') && !args.includes('--countries')) runPlayersAndLeaderboardsAndCountries = false;
 
     // Sincroniza tabelas estáticas de Master Cars e Master Tracks condicionalmente
     if (runCars) await syncCars(true);
