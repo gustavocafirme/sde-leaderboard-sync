@@ -2,48 +2,46 @@ const { syncCars, syncCountries, syncManualCountries, syncTracks, syncPlayersMet
 const { processAndSyncLeaderboardsAndRatings } = require('./mathEngine');
 
 async function main() {
-    console.log("=== Iniciando Sincronização SDE com o Supabase ===");
+    console.log("=== Starting SDE Synchronization with Supabase ===");
 
     const args = process.argv.slice(2).map(arg => arg.toLowerCase());
 
-    // Flag unificada: controla leaderboards, tabela de jogadores, acrônimo/nome e c_ssr de países
+    // Unified flag governing dynamic updates (leaderboards, players table, and country C-SSR)
     let runPlayersAndLeaderboardsAndCountries = true;
     let runTracks = false;
     let runCars = false;
 
     if (args.includes('--fetchall') || args.includes('fetchall')) {
-        runPlayersAndLeaderboardsAndCountries = true;
+        //runPlayersAndLeaderboardsAndCountries = true;
         runTracks = true;
         runCars = true;
-    }
-    else {
+    } else {
         if (args.includes('--tracks')) runTracks = true;
         if (args.includes('--cars')) runCars = true;
-        
-        // O argumento unificado desativa todo o bloco principal de dados dinâmicos
-        // O argumento --countries antigo agora mapeia para a flag unificada ou é coberto por ela
+
+        // Disables unified flow only if --noplayersandleaderboards is set and --countries is not requested
         if (args.includes('--noplayersandleaderboards') && !args.includes('--countries')) runPlayersAndLeaderboardsAndCountries = false;
     }
 
-    // Sincroniza tabelas estáticas de Master Cars e Master Tracks condicionalmente
-    if (runCars) await syncCars(true);
-    if (runTracks) await syncTracks(true);
+    // Conditionally synchronize static master tables
+    if (runCars) await syncCars();
+    if (runTracks) await syncTracks();
 
-    // Sincroniza e envia os países para o Supabase apenas se a flag unificada estiver ativa
+    // Synchronize and upsert countries (fully governed by the unified flag)
     await syncCountries(runPlayersAndLeaderboardsAndCountries);
 
-    // Sempre carrega as nacionalidades manuais na memória RAM (necessário para os cálculos)
+    // Always load manual country overrides into local memory for calculation dependencies
     await syncManualCountries();
 
-    // Sincroniza e envia metadados de jogadores se a flag unificada estiver ativa
+    // Synchronize player metadata if the unified flag is active
     await syncPlayersMetadata(runPlayersAndLeaderboardsAndCountries);
 
-    // Executa o motor matemático principal e envio das leaderboards, jogadores e C-SSR dos países
+    // Execute core mathematical engine and synchronize leaderboards, players, and country ratings
     if (runPlayersAndLeaderboardsAndCountries) {
         await processAndSyncLeaderboardsAndRatings();
     }
 
-    console.log("=== Sincronização Concluída com Sucesso! ===");
+    console.log("=== Synchronization Completed Successfully! ===");
 }
 
 main().catch(console.error);

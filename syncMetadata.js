@@ -3,16 +3,16 @@ const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir } = require('./config');
 
-const countryNamesMap = new Map();    // countryId -> countryName (sigla, ex: "br", "aa")
-const countrySiglaMap = new Map();    // countryId -> sigla em minúsculo para validação
-const countryFullNameMap = new Map(); // countryId -> countryFullName (ex: "Brazil")
-const manualCountriesMap = new Map(); // steamId   -> countryId manual
+const countryNamesMap = new Map();    // countryId -> country acronym (e.g., "br", "aa")
+const countrySiglaMap = new Map();    // countryId -> lowercase acronym for validation
+const countryFullNameMap = new Map(); // countryId -> full country name (e.g., "Brazil")
+const manualCountriesMap = new Map(); // steamId   -> manual countryId
 const playerNamesMap = new Map();
 
 async function syncCars() {
     const filePath = path.join(trackingDir, 'cars.csv');
     if (!fs.existsSync(filePath)) {
-        console.log("[Cars] Arquivo cars.csv não encontrado.");
+        console.log("[Cars] cars.csv file not found.");
         return;
     }
 
@@ -30,20 +30,19 @@ async function syncCars() {
 
     const { error } = await supabase.from('cars').upsert(rows, { onConflict: 'car_id' });
     if (error) {
-        console.error("[Cars] Erro ao enviar para o Supabase:", error.message);
+        console.error("[Cars] Error uploading to Supabase:", error.message);
     } else {
-        console.log(`[Cars] ${rows.length} carros sincronizados com sucesso.`);
+        console.log(`[Cars] Successfully synchronized ${rows.length} cars.`);
     }
 }
 
 /**
- * Carrega os países do CSV para a memória local (obrigatório para o mathEngine) 
- * e opcionalmente faz o upsert no Supabase.
+ * Loads countries from CSV into local memory and optionally upserts them to Supabase.
  */
 async function syncCountries(shouldUpsert = true) {
     const filePath = path.join(trackingDir, 'countries.csv');
     if (!fs.existsSync(filePath)) {
-        console.log("[Countries] Arquivo countries.csv não encontrado.");
+        console.log("[Countries] countries.csv file not found.");
         return;
     }
 
@@ -90,7 +89,6 @@ async function syncCountries(shouldUpsert = true) {
         }
     }
 
-    // Se o upsert não foi solicitado, encerra aqui após popular a memória RAM
     if (!shouldUpsert) {
         return;
     }
@@ -98,9 +96,9 @@ async function syncCountries(shouldUpsert = true) {
     const rows = Array.from(canonicalCountriesMap.values());
     const { error } = await supabase.from('countries').upsert(rows, { onConflict: 'country_id' });
     if (error) {
-        console.error("[Countries] Erro ao enviar para o Supabase:", error.message);
+        console.error("[Countries] Error uploading to Supabase:", error.message);
     } else {
-        console.log(`[Countries] ${rows.length} países canônicos unificados sincronizados com sucesso.`);
+        console.log(`[Countries] Successfully synchronized ${rows.length} unified canonical countries.`);
     }
 }
 
@@ -153,7 +151,7 @@ function getManualCountryId(steamId) {
 async function syncTracks() {
     const filePath = path.join(trackingDir, 'tracks.csv');
     if (!fs.existsSync(filePath)) {
-        console.log("[Tracks] Arquivo tracks.csv não encontrado.");
+        console.log("[Tracks] tracks.csv file not found.");
         return;
     }
 
@@ -171,20 +169,16 @@ async function syncTracks() {
 
     const { error } = await supabase.from('tracks').upsert(rows, { onConflict: 'track_index' });
     if (error) {
-        console.error("[Tracks] Erro ao enviar para o Supabase:", error.message);
+        console.error("[Tracks] Error uploading to Supabase:", error.message);
     } else {
-        console.log(`[Tracks] ${rows.length} pistas sincronizadas com sucesso via tracks.csv.`);
+        console.log(`[Tracks] Successfully synchronized ${rows.length} tracks via tracks.csv.`);
     }
 }
 
-/**
- * Carrega os nomes dos jogadores para a memória local (necessário para o mathEngine)
- * e opcionalmente faz o upsert na tabela de jogadores do Supabase.
- */
 async function syncPlayersMetadata(shouldUpsert = true) {
     const filePath = path.join(trackingDir, 'players.csv');
     if (!fs.existsSync(filePath)) {
-        console.log("[Players] Arquivo players.csv não encontrado.");
+        console.log("[Players] players.csv file not found.");
         return;
     }
 
@@ -230,7 +224,6 @@ async function syncPlayersMetadata(shouldUpsert = true) {
         }
     }
 
-    // Se o upsert não foi solicitado, encerra aqui após popular a memória RAM
     if (!shouldUpsert) {
         return;
     }
@@ -240,10 +233,10 @@ async function syncPlayersMetadata(shouldUpsert = true) {
         const chunk = rows.slice(i, i + chunkSize);
         const { error } = await supabase.from('players').upsert(chunk, { onConflict: 'steam_id' });
         if (error) {
-            console.error(`[Players] Erro no lote ${i}:`, error.message);
+            console.error(`[Players] Error at chunk ${i}:`, error.message);
         }
     }
-    console.log(`[Players] ${rows.length} jogadores processados com skill rating oficial.`);
+    console.log(`[Players] Successfully processed and synchronized ${rows.length} players with official skill rating.`);
 }
 
 function getPlayerName(steamId) {

@@ -1,8 +1,9 @@
 const path = require('path');
 
+// Base directory for game tracking data files
 const trackingDir = process.env.GAME_TRACKING_DIR || path.join(__dirname, 'UserData', 'LeaderboardTracking');
 
-// Tabela de Prestige Points indexada pelo Rank (1 a 30). Posições acima de 30 concedem 0 pontos.
+// Prestige Points table indexed by global rank (1 to 30). Ranks above 30 yield 0 points.
 const prestigePointsTable = [
     0,      // Rank 0 (placeholder)
     200,    // Rank 1

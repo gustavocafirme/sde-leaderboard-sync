@@ -1,18 +1,18 @@
 const { totalTracks } = require('./config');
 
 /**
- * Calcula o score_fi para cada entrada de uma pista.
- * Fórmula: score_fi = Wr / Pft (onde Wr é o tick time do 1º lugar e Pft é o tick time do jogador)
+ * Computes the score_fi metric for each track entry.
+ * Formula: score_fi = Wr / Ptt (where Wr is the 1st place tick time and Ptt is the player tick time)
  */
 function processTrackFiRatings(trackEntries) {
     if (!trackEntries || trackEntries.length === 0) return trackEntries;
 
-    // O World Record (Wr) usa o tickTime do 1º colocado (já ordenado por effectiveTime/tempo)
+    // World Record (Wr) uses the tickTime of the 1st place entry
     const worldRecordTime = trackEntries[0].tickTime;
 
     for (let index = 0; index < trackEntries.length; index++) {
         const entry = trackEntries[index];
-        const playerTime = entry.tickTime; // Pft (Player frame time baseado no tick)
+        const playerTime = entry.tickTime;
 
         let scoreFi = 0;
         if (playerTime > 0) {
@@ -26,7 +26,7 @@ function processTrackFiRatings(trackEntries) {
 }
 
 /**
- * Calcula globalmente o SSR-FI de cada jogador (soma dos scores dividido por 75).
+ * Computes global SSR-FI ratings for all unique players (sum of FI scores divided by total tracks).
  */
 function computePlayerFiRatings(allUniqueSteamIds, playerScoresPerTrack) {
     const playerFiRatings = {};

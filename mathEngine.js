@@ -8,7 +8,7 @@ const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
 const { computePlayerPrestigePoints } = require('./prestigeEngine');
 
 /**
- * Função universal para cálculo do Tick Time (Frame Time)
+ * Universal helper function to compute frame tick time.
  */
 function calculateTickTime(timeInSeconds) {
     if (Number(timeInSeconds.toFixed(2)) === timeInSeconds) {
@@ -21,7 +21,7 @@ function calculateTickTime(timeInSeconds) {
 async function processAndSyncLeaderboardsAndRatings() {
     const leaderboardsDir = path.join(trackingDir, 'Leaderboards');
     if (!fs.existsSync(leaderboardsDir)) {
-        console.log("[Leaderboards] Pasta de leaderboards não encontrada.");
+        console.log("[Leaderboards] Leaderboards directory not found.");
         return;
     }
 
@@ -51,7 +51,7 @@ async function processAndSyncLeaderboardsAndRatings() {
     const allUniqueCountryIds = new Set();
     const playerCountryFrequencies = {};
 
-    // 1ª ETAPA: Carrega todas as pistas calculando Tick Time e Effective Time de forma unificada
+    // STAGE 1: Load all track files, computing Tick Time and Effective Time uniformly
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
         const filePath = path.join(leaderboardsDir, `leaderboard_track_${trackIndex}.csv`);
         if (!fs.existsSync(filePath)) continue;
@@ -101,7 +101,7 @@ async function processAndSyncLeaderboardsAndRatings() {
         }
     }
 
-    // Determina o país oficial (best country) de cada jogador ANTES do cálculo do C-Score
+    // Determine the official best country for each player prior to score calculations
     const playerBestCountry = {};
     for (const steamId of allUniqueSteamIds) {
         const counts = playerCountryFrequencies[steamId] || {};
@@ -138,7 +138,7 @@ async function processAndSyncLeaderboardsAndRatings() {
     const playerFiScoresPerTrack = {};
     const countryScoresPerTrack = {};
 
-    // 2ª ETAPA: Processa as pontuações e o C-Score das pistas utilizando o país oficial do jogador
+    // STAGE 2: Process track scores and C-Scores using each player's official resolved country
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
         const trackEntries = rawTracksEntries[trackIndex];
         if (!trackEntries || trackEntries.length === 0) continue;
@@ -162,13 +162,13 @@ async function processAndSyncLeaderboardsAndRatings() {
         }
     }
 
-    // Calcula ratings globais
+    // Compute global ratings
     const playerRatings = computePlayerRatings(allUniqueSteamIds, playerScoresPerTrack);
     const playerFiRatings = computePlayerFiRatings(allUniqueSteamIds, playerFiScoresPerTrack);
     const countryRatings = computeCountryRatings(allUniqueCountryIds, countryScoresPerTrack);
 
-    // Passo D: Sincroniza dados das pistas na tabela track_leaderboards
-    console.log("[Leaderboards] Enviando dados calculados das pistas para o Supabase...");
+    // Synchronize track leaderboard entries to Supabase
+    console.log("[Leaderboards] Uploading calculated track leaderboard data to Supabase...");
 
     for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
         const trackEntries = allTracksData[trackIndex];
@@ -204,14 +204,14 @@ async function processAndSyncLeaderboardsAndRatings() {
                 .upsert(chunk, { onConflict: 'track_index,steam_id' });
 
             if (error) {
-                console.error(`[Leaderboards] Erro na pista #${trackIndex} (lote ${i}):`, error.message);
+                console.error(`[Leaderboards] Error on track #${trackIndex} (chunk ${i}):`, error.message);
             }
         }
-        console.log(`[Leaderboards] Pista #${trackIndex} sincronizada (${rowsToUpsert.length} registros).`);
+        console.log(`[Leaderboards] Track #${trackIndex} synchronized (${rowsToUpsert.length} entries).`);
     }
 
-    // Passo E: Atualiza a tabela de jogadores
-    console.log("[Players] Atualizando pontuações, país oficial, SSR-FI e Prestige Points na tabela de jogadores...");
+    // Update players table data
+    console.log("[Players] Updating ratings, official country, SSR-FI, and Prestige Points in the players table...");
     const playerRowsToUpsert = [];
 
     for (const steamId of allUniqueSteamIds) {
@@ -246,13 +246,13 @@ async function processAndSyncLeaderboardsAndRatings() {
             .upsert(chunk, { onConflict: 'steam_id' });
 
         if (error) {
-            console.error(`[Players Ratings] Erro no lote ${i}:`, error.message);
+            console.error(`[Players Ratings] Error at chunk ${i}:`, error.message);
         }
     }
-    console.log(`[Players] Dados de ${playerRowsToUpsert.length} jogadores atualizados com sucesso.`);
+    console.log(`[Players] Data for ${playerRowsToUpsert.length} players successfully updated.`);
 
-    // Passo F: Atualiza as pontuações C-SSR, acrônimo e nome completo na tabela de países
-    console.log("[Countries] Atualizando pontuações C-SSR na tabela de países...");
+    // Update countries C-SSR ratings in the countries table
+    console.log("[Countries] Updating C-SSR ratings in the countries table...");
     const countryRowsToUpsert = [];
 
     for (const countryId of allUniqueCountryIds) {
@@ -273,9 +273,9 @@ async function processAndSyncLeaderboardsAndRatings() {
             .upsert(countryRowsToUpsert, { onConflict: 'country_id' });
 
         if (error) {
-            console.error("[Countries Ratings] Erro ao atualizar C-SSR dos países:", error.message);
+            console.error("[Countries Ratings] Error updating country C-SSR:", error.message);
         } else {
-            console.log(`[Countries] C-SSR de ${countryRowsToUpsert.length} países atualizados com sucesso.`);
+            console.log(`[Countries] C-SSR updated for ${countryRowsToUpsert.length} countries successfully.`);
         }
     }
 }

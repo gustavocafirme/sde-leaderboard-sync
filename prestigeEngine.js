@@ -1,9 +1,9 @@
 const { prestigePointsTable } = require('./config');
 
 /**
- * Calcula os Prestige Points (pp) para um único jogador com base nas posições originais obtidas nas pistas.
- * @param {Object} playerTracks - Dicionário de pistas jogadas pelo jogador.
- * @returns {number} Total de Prestige Points acumulados.
+ * Computes Prestige Points (pp) for a single player based on their original track ranks.
+ * @param {Object} playerTracks - Dictionary of tracks played by the player.
+ * @returns {number} Total accumulated Prestige Points.
  */
 function computePlayerPrestigePoints(playerTracks) {
     let totalPrestigePoints = 0.0;
@@ -12,7 +12,7 @@ function computePlayerPrestigePoints(playerTracks) {
         const entry = playerTracks[trackIndexStr];
         const rank = entry.originalPosition;
         
-        // Verifica se o rank está dentro do intervalo válido da tabela de Prestige Points (1 a 30)
+        // Check if rank falls within the valid Prestige Points scoring range (1 to 30)
         if (rank >= 1 && rank < prestigePointsTable.length) {
             totalPrestigePoints += prestigePointsTable[rank];
         }
