@@ -8,7 +8,7 @@ An automated data processing and synchronization engine designed for **Star Drif
   - **SSR & SSR-W Engine:** Weighted skill rating decay model accounting for position and gap-to-2nd tie-breakers.
   - **FI Engine:** Performance index metrics calculated relative to world record tick times across tracks.
   - **Prestige Points Engine:** Competitive ranking point distribution system.
-  - **Country C-SSR Engine:** Country leaderboard aggregated score calculations using official country assignments.
+  - **Country C-SSR Engine:** Aggregated country leaderboard score calculations based on each player's resolved primary nationality and track SSR.
 - **Selective Synchronization:** Flexible argument parsing allowing isolated or batch updates for tracks, master cars, player metadata, and global leaderboards.
 - **Data Integrity & Normalization:** Unified country acronym mapping, alias resolution, and automated row updates via Supabase upserts.
 
