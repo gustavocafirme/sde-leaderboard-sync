@@ -18,7 +18,7 @@ function calculateTickTime(timeInSeconds) {
     }
 }
 
-async function processAndSyncLeaderboardsAndRatings(options = { runPlayersAndLeaderboards: true, runCountries: false }) {
+async function processAndSyncLeaderboardsAndRatings() {
     const leaderboardsDir = path.join(trackingDir, 'Leaderboards');
     if (!fs.existsSync(leaderboardsDir)) {
         console.log("[Leaderboards] Pasta de leaderboards não encontrada.");
@@ -167,123 +167,115 @@ async function processAndSyncLeaderboardsAndRatings(options = { runPlayersAndLea
     const playerFiRatings = computePlayerFiRatings(allUniqueSteamIds, playerFiScoresPerTrack);
     const countryRatings = computeCountryRatings(allUniqueCountryIds, countryScoresPerTrack);
 
-    // Passo D: Sincroniza dados das pistas na tabela track_leaderboards (Controlado por runPlayersAndLeaderboards)
-    if (options.runPlayersAndLeaderboards) {
-        console.log("[Leaderboards] Enviando dados calculados das pistas para o Supabase...");
+    // Passo D: Sincroniza dados das pistas na tabela track_leaderboards
+    console.log("[Leaderboards] Enviando dados calculados das pistas para o Supabase...");
 
-        for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
-            const trackEntries = allTracksData[trackIndex];
-            if (!trackEntries || trackEntries.length === 0) continue;
+    for (let trackIndex = 1; trackIndex <= totalTracks; trackIndex++) {
+        const trackEntries = allTracksData[trackIndex];
+        if (!trackEntries || trackEntries.length === 0) continue;
 
-            const rowsToUpsert = trackEntries.map(entry => {
-                const playerRatingData = playerRatings[entry.steamId];
-                const scoreW = playerRatingData && playerRatingData.weightedScoresPerTrack[trackIndex] !== undefined
-                    ? playerRatingData.weightedScoresPerTrack[trackIndex]
-                    : 0.0;
+        const rowsToUpsert = trackEntries.map(entry => {
+            const playerRatingData = playerRatings[entry.steamId];
+            const scoreW = playerRatingData && playerRatingData.weightedScoresPerTrack[trackIndex] !== undefined
+                ? playerRatingData.weightedScoresPerTrack[trackIndex]
+                : 0.0;
 
-                return {
-                    track_index: trackIndex,
-                    position: entry.calculatedPosition,
-                    steam_id: entry.steamId,
-                    car_id: entry.carId,
-                    time_ms: entry.timeMs,
-                    effective_time: entry.effectiveTime,
-                    score: entry.score,
-                    score_w: scoreW,
-                    to2nd: entry.to2nd,
-                    c_score: entry.cScore || 0.0,
-                    score_fi: entry.scoreFi || 0.0,
-                    score_official: entry.scoreOfficial || 0.0
-                };
+            return {
+                track_index: trackIndex,
+                position: entry.calculatedPosition,
+                steam_id: entry.steamId,
+                car_id: entry.carId,
+                time_ms: entry.timeMs,
+                effective_time: entry.effectiveTime,
+                score: entry.score,
+                score_w: scoreW,
+                to2nd: entry.to2nd,
+                c_score: entry.cScore || 0.0,
+                score_fi: entry.scoreFi || 0.0,
+                score_official: entry.scoreOfficial || 0.0
+            };
+        });
+
+        const chunkSize = 500;
+        for (let i = 0; i < rowsToUpsert.length; i += chunkSize) {
+            const chunk = rowsToUpsert.slice(i, i + chunkSize);
+            const { error } = await supabase
+                .from('track_leaderboards')
+                .upsert(chunk, { onConflict: 'track_index,steam_id' });
+
+            if (error) {
+                console.error(`[Leaderboards] Erro na pista #${trackIndex} (lote ${i}):`, error.message);
+            }
+        }
+        console.log(`[Leaderboards] Pista #${trackIndex} sincronizada (${rowsToUpsert.length} registros).`);
+    }
+
+    // Passo E: Atualiza a tabela de jogadores
+    console.log("[Players] Atualizando pontuações, país oficial, SSR-FI e Prestige Points na tabela de jogadores...");
+    const playerRowsToUpsert = [];
+
+    for (const steamId of allUniqueSteamIds) {
+        const rating = playerRatings[steamId];
+        const fiRating = playerFiRatings[steamId];
+        const playerName = getPlayerName(steamId);
+        const bestCountryId = playerBestCountry[steamId];
+
+        const playerTracks = playerScoresPerTrack[steamId] || {};
+        const mapsPlayed = Object.keys(playerTracks).length;
+        const totalPrestigePoints = computePlayerPrestigePoints(playerTracks);
+
+        if (rating) {
+            playerRowsToUpsert.push({
+                steam_id: steamId,
+                player_name: playerName,
+                ssr: rating.ssr,
+                ssr_w: rating.ssrW,
+                ssr_fi: fiRating ? fiRating.ssrFi : 0.0,
+                country_id: bestCountryId,
+                maps_played: mapsPlayed,
+                prestige_points: totalPrestigePoints
             });
-
-            const chunkSize = 500;
-            for (let i = 0; i < rowsToUpsert.length; i += chunkSize) {
-                const chunk = rowsToUpsert.slice(i, i + chunkSize);
-                const { error } = await supabase
-                    .from('track_leaderboards')
-                    .upsert(chunk, { onConflict: 'track_index,steam_id' });
-
-                if (error) {
-                    console.error(`[Leaderboards] Erro na pista #${trackIndex} (lote ${i}):`, error.message);
-                }
-            }
-            console.log(`[Leaderboards] Pista #${trackIndex} sincronizada (${rowsToUpsert.length} registros).`);
         }
-    
-        // Passo E: Atualiza a tabela de jogadores (Controlado por runPlayersAndLeaderboards)
-        console.log("[Players] Atualizando pontuações, país oficial, SSR-FI e Prestige Points na tabela de jogadores...");
-        const playerRowsToUpsert = [];
+    }
 
-        for (const steamId of allUniqueSteamIds) {
-            const rating = playerRatings[steamId];
-            const fiRating = playerFiRatings[steamId];
-            const playerName = getPlayerName(steamId);
-            const bestCountryId = playerBestCountry[steamId];
+    const playerChunkSize = 500;
+    for (let i = 0; i < playerRowsToUpsert.length; i += playerChunkSize) {
+        const chunk = playerRowsToUpsert.slice(i, i + playerChunkSize);
+        const { error } = await supabase
+            .from('players')
+            .upsert(chunk, { onConflict: 'steam_id' });
 
-            const playerTracks = playerScoresPerTrack[steamId] || {};
-            const mapsPlayed = Object.keys(playerTracks).length;
-            const totalPrestigePoints = computePlayerPrestigePoints(playerTracks);
-
-            if (rating) {
-                playerRowsToUpsert.push({
-                    steam_id: steamId,
-                    player_name: playerName,
-                    ssr: rating.ssr,
-                    ssr_w: rating.ssrW,
-                    ssr_fi: fiRating ? fiRating.ssrFi : 0.0,
-                    country_id: bestCountryId,
-                    maps_played: mapsPlayed,
-                    prestige_points: totalPrestigePoints
-                });
-            }
+        if (error) {
+            console.error(`[Players Ratings] Erro no lote ${i}:`, error.message);
         }
+    }
+    console.log(`[Players] Dados de ${playerRowsToUpsert.length} jogadores atualizados com sucesso.`);
 
-        const playerChunkSize = 500;
-        for (let i = 0; i < playerRowsToUpsert.length; i += playerChunkSize) {
-            const chunk = playerRowsToUpsert.slice(i, i + playerChunkSize);
-            const { error } = await supabase
-                .from('players')
-                .upsert(chunk, { onConflict: 'steam_id' });
+    // Passo F: Atualiza as pontuações C-SSR, acrônimo e nome completo na tabela de países
+    console.log("[Countries] Atualizando pontuações C-SSR na tabela de países...");
+    const countryRowsToUpsert = [];
 
-            if (error) {
-                console.error(`[Players Ratings] Erro no lote ${i}:`, error.message);
-            }
+    for (const countryId of allUniqueCountryIds) {
+        const rating = countryRatings[countryId];
+        if (rating) {
+            countryRowsToUpsert.push({
+                country_id: countryId,
+                country_acronym: getCountryName(countryId),
+                country_name: getCountryFullName(countryId),
+                c_ssr: rating.cssr
+            });
         }
-        console.log(`[Players] Dados de ${playerRowsToUpsert.length} jogadores atualizados com sucesso.`);
-    
-        // Passo F: Atualiza as pontuações C-SSR na tabela de países (Sempre executado se runPlayersAndLeaderboards estiver ativo)
-        console.log("[Countries] Atualizando pontuações C-SSR na tabela de países...");
-        const countryRowsToUpsert = [];
+    }
 
-        for (const countryId of allUniqueCountryIds) {
-            const rating = countryRatings[countryId];
-            if (rating) {
-                const countryDataObj = {
-                    country_id: countryId,
-                    c_ssr: rating.cssr
-                };
+    if (countryRowsToUpsert.length > 0) {
+        const { error } = await supabase
+            .from('countries')
+            .upsert(countryRowsToUpsert, { onConflict: 'country_id' });
 
-                // Condicional inteligente: Só inclui e sobrescreve acronym/name se a flag de países estiver ativa
-                if (options.runCountries) {
-                    countryDataObj.country_acronym = getCountryName(countryId);
-                    countryDataObj.country_name = getCountryFullName(countryId);
-                }
-
-                countryRowsToUpsert.push(countryDataObj);
-            }
-        }
-
-        if (countryRowsToUpsert.length > 0) {
-            const { error } = await supabase
-                .from('countries')
-                .upsert(countryRowsToUpsert, { onConflict: 'country_id' });
-
-            if (error) {
-                console.error("[Countries Ratings] Erro ao atualizar C-SSR dos países:", error.message);
-            } else {
-                console.log(`[Countries] C-SSR de ${countryRowsToUpsert.length} países atualizados com sucesso.`);
-            }
+        if (error) {
+            console.error("[Countries Ratings] Erro ao atualizar C-SSR dos países:", error.message);
+        } else {
+            console.log(`[Countries] C-SSR de ${countryRowsToUpsert.length} países atualizados com sucesso.`);
         }
     }
 }
