@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
-const { trackingDir, totalTracks, prestigePointsTable } = require('./config');
+const { trackingDir, totalTracks } = require('./config');
 const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId } = require('./syncMetadata');
 const { calculateEffectiveTime, processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
 const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
+const { computePlayerPrestigePoints } = require('./prestigeEngine');
 
 /**
  * Função universal para cálculo do Tick Time (Frame Time)
@@ -219,19 +220,9 @@ async function processAndSyncLeaderboardsAndRatings() {
         const playerName = getPlayerName(steamId);
         const bestCountryId = playerBestCountry[steamId];
 
-        // Conta quantos mapas o jogador realmente jogou/pontuou e calcula os Prestige Points (pp)
         const playerTracks = playerScoresPerTrack[steamId] || {};
         const mapsPlayed = Object.keys(playerTracks).length;
-
-        let totalPrestigePoints = 0.0;
-        for (const trackIndexStr in playerTracks) {
-            const entry = playerTracks[trackIndexStr];
-            // Usa o rank original (originalPosition) ou a posição calculada. O ideal para Prestige Points é o rank real obtido na pista:
-            const rank = entry.originalPosition; 
-            if (rank >= 1 && rank < prestigePointsTable.length) {
-                totalPrestigePoints += prestigePointsTable[rank];
-            }
-        }
+        const totalPrestigePoints = computePlayerPrestigePoints(playerTracks);
 
         if (rating) {
             playerRowsToUpsert.push({
