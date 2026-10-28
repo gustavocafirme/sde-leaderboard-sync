@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir, totalTracks } = require('./config');
-const { getPlayerName, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId, getCountryFullName } = require('./syncMetadata');
+const { getPlayerName, getPlayerSkillRating, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId, getCountryFullName } = require('./syncMetadata');
 const { calculateEffectiveTime, processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
 const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
 const { computePlayerPrestigePoints } = require('./prestigeEngine');
@@ -233,7 +233,8 @@ async function processAndSyncLeaderboardsAndRatings() {
                 ssr_fi: fiRating ? fiRating.ssrFi : 0.0,
                 country_id: bestCountryId,
                 maps_played: mapsPlayed,
-                prestige_points: totalPrestigePoints
+                prestige_points: totalPrestigePoints,
+                skill_rating_official: getPlayerSkillRating(steamId)
             });
         }
     }

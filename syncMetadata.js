@@ -8,6 +8,7 @@ const countrySiglaMap = new Map();    // countryId -> lowercase acronym for vali
 const countryFullNameMap = new Map(); // countryId -> full country name (e.g., "Brazil")
 const manualCountriesMap = new Map(); // steamId   -> manual countryId
 const playerNamesMap = new Map();
+const playerSkillRatingsMap = new Map();
 
 async function syncCars() {
     const filePath = path.join(trackingDir, 'cars.csv');
@@ -216,6 +217,7 @@ async function syncPlayersMetadata(shouldUpsert = true) {
             }
 
             playerNamesMap.set(steamId, playerName);
+            playerSkillRatingsMap.set(steamId, skillRatingOfficial);
             rows.push({
                 steam_id: steamId,
                 player_name: playerName,
@@ -243,6 +245,10 @@ function getPlayerName(steamId) {
     return playerNamesMap.get(steamId) || "Unknown";
 }
 
+function getPlayerSkillRating(steamId) {
+    return playerSkillRatingsMap.get(steamId) || 0.0;
+}
+
 function getCountryFullName(countryId) {
     return countryFullNameMap.get(countryId) || "Unknown";
 }
@@ -254,6 +260,7 @@ module.exports = {
     syncTracks,
     syncPlayersMetadata,
     getPlayerName,
+    getPlayerSkillRating,
     getCountryName,
     getCountrySigla,
     getCountryCanonicalSigla,
