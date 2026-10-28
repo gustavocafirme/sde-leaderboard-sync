@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir, totalTracks } = require('./config');
-const { getPlayerName, getPlayerSkillRating, getCountryName, getCountrySigla, getCountryCanonicalSigla, getManualCountryId, getCountryFullName } = require('./syncMetadata');
+const { getPlayerName, getPlayerSkillRating, getCountryName, getCountryAcronymLower, getCountryCanonicalAcronym, getManualCountryId, getCountryFullName } = require('./syncMetadata');
 const { calculateEffectiveTime, processTrackRatings, computePlayerRatings, computeCountryRatings } = require('./ssrFamilyEngine');
 const { processTrackFiRatings, computePlayerFiRatings } = require('./fiEngine');
 const { computePlayerPrestigePoints } = require('./prestigeEngine');
@@ -25,14 +25,14 @@ async function processAndSyncLeaderboardsAndRatings() {
         return;
     }
 
-    const canonicalSiglaToIdMap = {};
+    const canonicalAcronymToIdMap = {};
     const rawCountryIdToCanonicalId = {};
 
     const { data: countriesData, error: countriesError } = await supabase.from('countries').select('country_id, country_acronym');
     if (!countriesError && countriesData) {
         for (const c of countriesData) {
-            const sigla = c.country_acronym.toLowerCase();
-            canonicalSiglaToIdMap[sigla] = c.country_id;
+            const acronymLower = c.country_acronym.toLowerCase();
+            canonicalAcronymToIdMap[acronymLower] = c.country_id;
         }
     }
 
@@ -40,8 +40,8 @@ async function processAndSyncLeaderboardsAndRatings() {
         if (rawCountryIdToCanonicalId[rawCountryId] !== undefined) {
             return rawCountryIdToCanonicalId[rawCountryId];
         }
-        const canonicalSigla = getCountryCanonicalSigla(rawCountryId);
-        const officialId = canonicalSiglaToIdMap[canonicalSigla] !== undefined ? canonicalSiglaToIdMap[canonicalSigla] : rawCountryId;
+        const canonicalAcronym = getCountryCanonicalAcronym(rawCountryId);
+        const officialId = canonicalAcronymToIdMap[canonicalAcronym] !== undefined ? canonicalAcronymToIdMap[canonicalAcronym] : rawCountryId;
         rawCountryIdToCanonicalId[rawCountryId] = officialId;
         return officialId;
     }
@@ -111,13 +111,13 @@ async function processAndSyncLeaderboardsAndRatings() {
 
         if (sortedCountryIds.length > 0) {
             bestCountryId = sortedCountryIds[0];
-            const primarySigla = getCountrySigla(bestCountryId);
+            const primaryAcronymLower = getCountryAcronymLower(bestCountryId);
 
-            if (primarySigla === 'aa' && sortedCountryIds.length > 1) {
+            if (primaryAcronymLower === 'aa' && sortedCountryIds.length > 1) {
                 bestCountryId = sortedCountryIds[1];
             }
 
-            if (getCountrySigla(bestCountryId) === 'aa') {
+            if (getCountryAcronymLower(bestCountryId) === 'aa') {
                 const manualId = getManualCountryId(steamId);
                 if (manualId !== null) {
                     bestCountryId = manualId;

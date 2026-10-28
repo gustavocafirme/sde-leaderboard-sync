@@ -3,10 +3,10 @@ const path = require('path');
 const supabase = require('./supabaseClient');
 const { trackingDir } = require('./config');
 
-const countryNamesMap = new Map();    // countryId -> country acronym (e.g., "br", "aa")
-const countrySiglaMap = new Map();    // countryId -> lowercase acronym for validation
-const countryFullNameMap = new Map(); // countryId -> full country name (e.g., "Brazil")
-const manualCountriesMap = new Map(); // steamId   -> manual countryId
+const countryNamesMap = new Map();         // countryId -> country acronym (e.g., "br", "aa")
+const countryAcronymLowerMap = new Map();  // countryId -> lowercase acronym for validation
+const countryFullNameMap = new Map();      // countryId -> full country name (e.g., "Brazil")
+const manualCountriesMap = new Map();      // steamId   -> manual countryId
 const playerNamesMap = new Map();
 const playerSkillRatingsMap = new Map();
 
@@ -57,27 +57,26 @@ async function syncCountries(shouldUpsert = true) {
             const countryAcronym = parts[1].replace(/"/g, '').trim();
             const countryName = parts.slice(2).join(',').replace(/"/g, '').trim();
 
-            let sigla = countryAcronym.toLowerCase();
-            let canonicalSigla = sigla;
+            let lowerAcronym = countryAcronym.toLowerCase();
             let canonicalAcronym = countryAcronym;
             let canonicalName = countryName;
 
-            if (sigla === 'um' || sigla === 'vi' || sigla === 'pr' || sigla === 'gu' || sigla === 'as' || sigla === 'mp') {
-                canonicalSigla = 'us'; canonicalAcronym = 'us'; canonicalName = 'United States';
-            } else if (sigla.startsWith('gb-')) {
-                canonicalSigla = 'gb'; canonicalAcronym = 'gb'; canonicalName = 'United Kingdom';
-            } else if (sigla === 'sj' || sigla === 'bv') {
-                canonicalSigla = 'no'; canonicalAcronym = 'no'; canonicalName = 'Norway';
-            } else if (sigla === 'ax') {
-                canonicalSigla = 'fi'; canonicalAcronym = 'fi'; canonicalName = 'Finland';
-            } else if (sigla === 'gl' || sigla === 'fo') {
-                canonicalSigla = 'dk'; canonicalAcronym = 'dk'; canonicalName = 'Denmark';
-            } else if (sigla === 'cx' || sigla === 'cc' || sigla === 'hm' || sigla === 'nf') {
-                canonicalSigla = 'au'; canonicalAcronym = 'au'; canonicalName = 'Australia';
+            if (lowerAcronym === 'um' || lowerAcronym === 'vi' || lowerAcronym === 'pr' || lowerAcronym === 'gu' || lowerAcronym === 'as' || lowerAcronym === 'mp') {
+                canonicalAcronym = 'us'; canonicalName = 'United States';
+            } else if (lowerAcronym.startsWith('gb-')) {
+                canonicalAcronym = 'gb'; canonicalName = 'United Kingdom';
+            } else if (lowerAcronym === 'sj' || lowerAcronym === 'bv') {
+                canonicalAcronym = 'no'; canonicalName = 'Norway';
+            } else if (lowerAcronym === 'ax') {
+                canonicalAcronym = 'fi'; canonicalName = 'Finland';
+            } else if (lowerAcronym === 'gl' || lowerAcronym === 'fo') {
+                canonicalAcronym = 'dk'; canonicalName = 'Denmark';
+            } else if (lowerAcronym === 'cx' || lowerAcronym === 'cc' || lowerAcronym === 'hm' || lowerAcronym === 'nf') {
+                canonicalAcronym = 'au'; canonicalName = 'Australia';
             }
 
-            if (!canonicalCountriesMap.has(canonicalSigla)) {
-                canonicalCountriesMap.set(canonicalSigla, {
+            if (!canonicalCountriesMap.has(canonicalAcronym.toLowerCase())) {
+                canonicalCountriesMap.set(canonicalAcronym.toLowerCase(), {
                     country_id: countryId,
                     country_acronym: canonicalAcronym,
                     country_name: canonicalName
@@ -85,7 +84,7 @@ async function syncCountries(shouldUpsert = true) {
             }
 
             countryNamesMap.set(countryId, canonicalAcronym);
-            countrySiglaMap.set(countryId, sigla);
+            countryAcronymLowerMap.set(countryId, lowerAcronym);
             countryFullNameMap.set(countryId, canonicalName);
         }
     }
@@ -107,19 +106,19 @@ function getCountryName(countryId) {
     return countryNamesMap.get(countryId) || "Unknown";
 }
 
-function getCountrySigla(countryId) {
-    return countrySiglaMap.get(countryId) || "";
+function getCountryAcronymLower(countryId) {
+    return countryAcronymLowerMap.get(countryId) || "";
 }
 
-function getCountryCanonicalSigla(countryId) {
-    const sigla = getCountrySigla(countryId);
-    if (sigla === 'um' || sigla === 'vi' || sigla === 'pr' || sigla === 'gu' || sigla === 'as' || sigla === 'mp') return 'us';
-    if (sigla.startsWith('gb-')) return 'gb';
-    if (sigla === 'sj' || sigla === 'bv') return 'no';
-    if (sigla === 'ax') return 'fi';
-    if (sigla === 'gl' || sigla === 'fo') return 'dk';
-    if (sigla === 'cx' || sigla === 'cc' || sigla === 'hm' || sigla === 'nf') return 'au';
-    return sigla;
+function getCountryCanonicalAcronym(countryId) {
+    const lowerAcronym = getCountryAcronymLower(countryId);
+    if (lowerAcronym === 'um' || lowerAcronym === 'vi' || lowerAcronym === 'pr' || lowerAcronym === 'gu' || lowerAcronym === 'as' || lowerAcronym === 'mp') return 'us';
+    if (lowerAcronym.startsWith('gb-')) return 'gb';
+    if (lowerAcronym === 'sj' || lowerAcronym === 'bv') return 'no';
+    if (lowerAcronym === 'ax') return 'fi';
+    if (lowerAcronym === 'gl' || lowerAcronym === 'fo') return 'dk';
+    if (lowerAcronym === 'cx' || lowerAcronym === 'cc' || lowerAcronym === 'hm' || lowerAcronym === 'nf') return 'au';
+    return lowerAcronym;
 }
 
 async function syncManualCountries() {
@@ -133,11 +132,11 @@ async function syncManualCountries() {
         const parts = lines[i].split(',');
         if (parts.length >= 2) {
             const steamId = parts[0].trim();
-            const countrySigla = parts[1].replace(/"/g, '').trim().toLowerCase();
+            const targetAcronymLower = parts[1].replace(/"/g, '').trim().toLowerCase();
 
-            for (const [cId, sigla] of countrySiglaMap.entries()) {
-                if (sigla === countrySigla) {
-                    manualCountriesMap.set(steamId, cId);
+            for (const [countryId, acronymLower] of countryAcronymLowerMap.entries()) {
+                if (acronymLower === targetAcronymLower) {
+                    manualCountriesMap.set(steamId, countryId);
                     break;
                 }
             }
@@ -262,8 +261,8 @@ module.exports = {
     getPlayerName,
     getPlayerSkillRating,
     getCountryName,
-    getCountrySigla,
-    getCountryCanonicalSigla,
+    getCountryAcronymLower,
+    getCountryCanonicalAcronym,
     getManualCountryId,
     getCountryFullName
 };
