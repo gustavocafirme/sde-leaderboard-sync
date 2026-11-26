@@ -1,6 +1,27 @@
 const { totalTracks } = require('./config');
 
 /**
+ * Computes to2nd_fi for entries with score_fi === 1 (matching WR tickTime)
+ * as firstPlaceScoreFi - secondPlaceScoreFi.
+ */
+function computeTrackTo2ndFi(trackEntries) {
+    if (!trackEntries || trackEntries.length === 0) return;
+
+    const worldRecordTime = trackEntries[0].tickTime;
+    const firstPlaceScoreFi = trackEntries[0].scoreFi || 0.0;
+    const secondPlaceScoreFi = trackEntries.length > 1 ? (trackEntries[1].scoreFi || 0.0) : null;
+
+    for (let index = 0; index < trackEntries.length; index++) {
+        const entry = trackEntries[index];
+        if (entry.tickTime === worldRecordTime && secondPlaceScoreFi !== null) {
+            entry.to2ndFi = firstPlaceScoreFi - secondPlaceScoreFi;
+        } else {
+            entry.to2ndFi = null;
+        }
+    }
+}
+
+/**
  * Computes the score_fi metric for each track entry.
  * Formula: score_fi = Wr / Ptt (where Wr is the 1st place tick time and Ptt is the player tick time)
  */
@@ -21,6 +42,8 @@ function processTrackFiRatings(trackEntries) {
 
         entry.scoreFi = scoreFi;
     }
+
+    computeTrackTo2ndFi(trackEntries);
 
     return trackEntries;
 }
@@ -59,5 +82,6 @@ function computePlayerFiRatings(allUniqueSteamIds, playerScoresPerTrack) {
 
 module.exports = {
     processTrackFiRatings,
-    computePlayerFiRatings
+    computePlayerFiRatings,
+    computeTrackTo2ndFi
 };

@@ -190,6 +190,7 @@ async function processAndSyncLeaderboardsAndRatings() {
                 score: entry.score,
                 score_w: scoreW,
                 to2nd: entry.to2nd,
+                to2nd_fi: entry.to2ndFi,
                 c_score: entry.cScore || 0.0,
                 score_fi: entry.scoreFi || 0.0,
                 score_official: entry.scoreOfficial || 0.0
